@@ -370,6 +370,32 @@ app.get('/api/geo/pipeline/summary', auth, (_req, res) => {
   );
 });
 
+/** Scheduler / platform status stubs (design P1–P2; mock GREEN) */
+app.get('/api/geo/scheduler/status', auth, (_req, res) => {
+  res.json(
+    ok({
+      implementation: 'in-process',
+      adapter_mode: 'mock',
+      defaults: {
+        max_inflight_jobs: 8,
+        per_platform_inflight: 2,
+        max_attempts: 3,
+      },
+    })
+  );
+});
+
+app.get('/api/geo/platform_status', auth, (_req, res) => {
+  const list = platforms.map((p) => ({
+    platformId: p.id,
+    name: p.name,
+    state: 'GREEN',
+    adapter: 'mock',
+    reason: null,
+  }));
+  res.json(ok({ list }));
+});
+
 /** 作品引用追踪 — live: /geo/article_monitor/statistics + list */
 app.post('/api/geo/article_monitor/statistics', auth, (req, res) => {
   const data = monitorRemain.contentOptimization(brandPlanIdFrom(req));
