@@ -25,6 +25,7 @@ export default new Vuex.Store({
   state: {
     token: storedAuth.token,
     user: storedAuth.user,
+    authMode: 'mock',
     loginDialog: false,
     platforms: [],
     history: [],
@@ -33,10 +34,14 @@ export default new Vuex.Store({
   getters: {
     isLoggedIn: (s) => Boolean(s.token),
     points: (s) => (s.user && s.user.points) || 0,
+    isUcAuth: (s) => s.authMode === 'uc',
   },
   mutations: {
     SET_LOGIN_DIALOG(state, v) {
       state.loginDialog = v;
+    },
+    SET_AUTH_MODE(state, mode) {
+      state.authMode = mode === 'uc' ? 'uc' : 'mock';
     },
     SET_AUTH(state, { token, user }) {
       state.token = token || '';
@@ -56,7 +61,7 @@ export default new Vuex.Store({
     },
   },
   actions: {
-    hydrate({ commit, dispatch }) {
+    async hydrate({ commit, dispatch }) {
       const token = localStorage.getItem(TOKEN_KEY) || '';
       let user = null;
       try {
@@ -65,7 +70,16 @@ export default new Vuex.Store({
         user = null;
       }
       if (token) commit('SET_AUTH', { token, user });
+      await dispatch('loadAuthConfig');
       return Promise.all([dispatch('loadPlatforms'), dispatch('loadHistory')]);
+    },
+    async loadAuthConfig({ commit }) {
+      try {
+        const res = await http.get('/auth/config');
+        commit('SET_AUTH_MODE', (res.data && res.data.mode) || 'mock');
+      } catch (_) {
+        commit('SET_AUTH_MODE', 'mock');
+      }
     },
     openLogin({ commit }) {
       commit('SET_LOGIN_DIALOG', true);
@@ -80,7 +94,14 @@ export default new Vuex.Store({
       await dispatch('loadHistory');
       return user;
     },
-    logout({ commit, dispatch }) {
+    async logout({ commit, dispatch, state }) {
+      try {
+        if (state.token) {
+          await http.post('/user/logout');
+        }
+      } catch (_) {
+        // ignore logout transport errors — clear local anyway
+      }
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       commit('SET_AUTH', { token: '', user: null });

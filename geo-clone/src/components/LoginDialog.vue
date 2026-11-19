@@ -13,15 +13,27 @@
         <button type="button" class="tab muted" disabled>微信登录</button>
       </div>
       <el-form ref="form" :model="form" :rules="rules" @submit.native.prevent="submit">
-        <el-form-item prop="phone">
-          <el-input v-model="form.phone" maxlength="11" placeholder="请输入手机号" prefix-icon="el-icon-mobile-phone" />
+        <el-form-item v-if="isUc" prop="email">
+          <el-input
+            v-model="form.email"
+            placeholder="请输入邮箱"
+            prefix-icon="el-icon-message"
+          />
+        </el-form-item>
+        <el-form-item v-else prop="phone">
+          <el-input
+            v-model="form.phone"
+            maxlength="11"
+            placeholder="请输入手机号"
+            prefix-icon="el-icon-mobile-phone"
+          />
         </el-form-item>
         <el-form-item prop="password">
           <el-input
             v-model="form.password"
             type="password"
             show-password
-            placeholder="请输入密码（任意6位以上）"
+            :placeholder="isUc ? '请输入密码' : '请输入密码（任意6位以上）'"
             prefix-icon="el-icon-lock"
             @keyup.enter.native="submit"
           />
@@ -34,7 +46,7 @@
         和
         <a href="javascript:;">隐私政策</a>
       </p>
-      <p class="hint muted">MVP mock：任意合法手机号 + 6 位以上密码即可登录，无需验证码。</p>
+      <p class="hint muted">{{ hint }}</p>
     </div>
   </el-dialog>
 </template>
@@ -45,14 +57,7 @@ export default {
   data() {
     return {
       loading: false,
-      form: { phone: '13800138000', password: 'demo1234' },
-      rules: {
-        phone: [
-          { required: true, message: '请输入手机号', trigger: 'blur' },
-          { pattern: /^1\d{10}$/, message: '请输入正确手机号', trigger: 'blur' },
-        ],
-        password: [{ required: true, min: 6, message: '密码至少6位', trigger: 'blur' }],
-      },
+      form: { phone: '13800138000', email: '', password: 'demo1234' },
     };
   },
   computed: {
@@ -64,6 +69,33 @@ export default {
         this.$store.commit('SET_LOGIN_DIALOG', v);
       },
     },
+    isUc() {
+      return this.$store.state.authMode === 'uc';
+    },
+    hint() {
+      if (this.isUc) {
+        return '用户中心登录：邮箱 + 密码（经本服务代理 UC，积分仍为本地 mock）。';
+      }
+      return 'MVP mock：任意合法手机号 + 6 位以上密码即可登录，无需验证码。';
+    },
+    rules() {
+      if (this.isUc) {
+        return {
+          email: [
+            { required: true, message: '请输入邮箱', trigger: 'blur' },
+            { type: 'email', message: '请输入正确邮箱', trigger: 'blur' },
+          ],
+          password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+        };
+      }
+      return {
+        phone: [
+          { required: true, message: '请输入手机号', trigger: 'blur' },
+          { pattern: /^1\d{10}$/, message: '请输入正确手机号', trigger: 'blur' },
+        ],
+        password: [{ required: true, min: 6, message: '密码至少6位', trigger: 'blur' }],
+      };
+    },
   },
   methods: {
     submit() {
@@ -71,7 +103,10 @@ export default {
         if (!valid) return;
         this.loading = true;
         try {
-          await this.$store.dispatch('login', { ...this.form });
+          const payload = this.isUc
+            ? { email: this.form.email, password: this.form.password }
+            : { phone: this.form.phone, password: this.form.password };
+          await this.$store.dispatch('login', payload);
           this.$message.success('登录成功');
           const redirect = this.$route.query.redirect;
           if (redirect) this.$router.replace(String(redirect));
