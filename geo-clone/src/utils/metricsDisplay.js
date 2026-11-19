@@ -26,4 +26,12 @@ export const METRIC_TIPS = {
   sentimentScore: '好感度为综合打分（百分制）；算法细节未在前端暴露，当前为 mock',
   aiCount: '监测期内纳入统计的 AI 对话条数（入池规则 unknown）',
   validRankCount: '至少提及本品牌一次、且可参与排名统计的对话数',
+  brandScore:
+    '品牌得分 = 提及率×0.75 + 提及次数得分×0.1 + 平均排名项×0.1 + 情感项×0.05；提及次数得分=1+99×x/(x+10)。排名/情感归一 provisional（字典 U-03）',
+  resourceCount: '引用文章数 = resource_count（线上 /geo/resource/statistics）',
+  totalLogCount: '引用次数 = total_log_count（引用事件发生次数）',
+  siteCount: '引用站点数 = site_count（去重站点）',
+  sentimentCount: '情感对话数 = sentiment_count（纳入舆情统计的对话数）',
+  polarityCounts: '正/中/负计数对齐 positive_count / neutral_count / negative_count',
+  negativeMentionRate: '负面提及率分母未钉死；本页 provisional：negative_count ÷ valid_rank_count（字典 SE-05）',
 };

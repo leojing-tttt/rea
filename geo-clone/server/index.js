@@ -14,6 +14,7 @@ const {
   referTrend,
 } = require('./mock-data');
 const { computeOverview } = require('./metrics');
+const monitorPages = require('./monitor-pages');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -234,6 +235,49 @@ app.post('/api/geo/rf/avg_refer_rank', auth, (req, res) => {
     return { date, avg_rank: Number(avg.toFixed(2)), valid_rank_count: ranks.length };
   });
   res.json(ok({ series }));
+});
+
+function brandPlanIdFrom(req) {
+  return (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
+}
+
+/** AI 引用来源 — live: POST /dso/api/geo/resource/statistics */
+app.post('/api/geo/resource/statistics', auth, (req, res) => {
+  res.json(ok(monitorPages.resourceStatistics(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/resource/statistics/site_category', auth, (req, res) => {
+  res.json(ok(monitorPages.resourceSiteCategory(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/resource/statistics/platform_site', auth, (req, res) => {
+  res.json(ok(monitorPages.resourceSiteRanking(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/resource/list', auth, (req, res) => {
+  res.json(ok(monitorPages.resourceArticleList(brandPlanIdFrom(req))));
+});
+
+/** 舆情 — live: POST /dso/api/geo/sentiment/overview */
+app.post('/api/geo/sentiment/overview', auth, (req, res) => {
+  res.json(ok(monitorPages.sentimentOverview(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/sentiment/trend', auth, (req, res) => {
+  res.json(ok(monitorPages.sentimentTrend(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/sentiment/platforms', auth, (req, res) => {
+  res.json(ok(monitorPages.sentimentPlatforms(brandPlanIdFrom(req))));
+});
+
+/** 数据大盘 — brand_score + platform cards */
+app.post('/api/geo/dashboard/overview', auth, (req, res) => {
+  res.json(ok(monitorPages.dashboardOverview(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/dashboard/platforms', auth, (req, res) => {
+  res.json(ok(monitorPages.dashboardPlatforms(brandPlanIdFrom(req))));
 });
 
 if (isProd) {
