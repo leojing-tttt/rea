@@ -1,18 +1,40 @@
 <template>
   <div class="monitor-layout">
     <aside class="monitor-sider card">
-      <router-link
-        v-for="item in menu"
-        :key="item.path"
-        :to="item.path"
-        class="sider-item"
-        :class="{ active: isActive(item), disabled: item.disabled }"
-        @click.native="onClick(item, $event)"
-      >
-        <i :class="item.icon"></i>
-        <span>{{ item.label }}</span>
-        <el-tag v-if="item.soon" size="mini" type="info" effect="plain">后续</el-tag>
-      </router-link>
+      <template v-for="item in menu">
+        <div v-if="item.children" :key="item.path + '-group'" class="sider-group">
+          <div
+            class="sider-item group-head"
+            :class="{ active: isGroupActive(item) }"
+            @click="item.open = !item.open"
+          >
+            <i :class="item.icon"></i>
+            <span>{{ item.label }}</span>
+            <i class="el-icon-arrow-down chevron" :class="{ open: item.open }"></i>
+          </div>
+          <div v-show="item.open" class="sider-sub">
+            <router-link
+              v-for="child in item.children"
+              :key="child.path"
+              :to="child.path"
+              class="sider-item sub"
+              :class="{ active: isActive(child) }"
+            >
+              <span>{{ child.label }}</span>
+            </router-link>
+          </div>
+        </div>
+        <router-link
+          v-else
+          :key="item.path"
+          :to="item.path"
+          class="sider-item"
+          :class="{ active: isActive(item) }"
+        >
+          <i :class="item.icon"></i>
+          <span>{{ item.label }}</span>
+        </router-link>
+      </template>
       <div class="sider-foot">
         <div class="points-chip" @click="$router.push('/setting')">
           <span class="avatar">A<sup>3</sup></span>
@@ -38,23 +60,47 @@ export default {
         { path: '/monitor/brandMentions', label: '提及率和排名', icon: 'el-icon-s-data' },
         { path: '/monitor/sentiment', label: '品牌舆情追踪', icon: 'el-icon-chat-dot-round' },
         { path: '/monitor/sources', label: 'AI引用来源', icon: 'el-icon-link' },
-        { path: '/monitor/tasks', label: 'AI对话记录', icon: 'el-icon-document', soon: true },
-        { path: '/monitor/contentOptimization', label: '作品引用追踪', icon: 'el-icon-files', soon: true },
-        { path: '/monitor/brandManagement', label: '品牌监测设置', icon: 'el-icon-setting', soon: true },
+        { path: '/monitor/tasks', label: 'AI对话记录', icon: 'el-icon-document' },
+        { path: '/monitor/contentOptimization', label: '作品引用追踪', icon: 'el-icon-files' },
+        {
+          path: '/monitor/brandManagement',
+          label: '品牌监测设置',
+          icon: 'el-icon-setting',
+          open: true,
+          children: [
+            { path: '/monitor/brandManagement', label: '监测计划' },
+            { path: '/monitor/aiQuestionLibrary', label: 'AI问题库' },
+            { path: '/monitor/BrandReport', label: '导出数据与报告' },
+          ],
+        },
       ],
     };
   },
   computed: {
     ...mapGetters(['points']),
   },
+  watch: {
+    $route: {
+      immediate: true,
+      handler(to) {
+        const group = this.menu.find((m) => m.children);
+        if (!group) return;
+        if (
+          to.path.startsWith('/monitor/brandManagement') ||
+          to.path.startsWith('/monitor/aiQuestionLibrary') ||
+          to.path.startsWith('/monitor/BrandReport')
+        ) {
+          group.open = true;
+        }
+      },
+    },
+  },
   methods: {
     isActive(item) {
-      return this.$route.path === item.path || this.$route.path.startsWith(item.path + '/');
+      return this.$route.path === item.path;
     },
-    onClick(item, e) {
-      if (item.soon && item.path !== '/monitor/brandMentions') {
-        // allow navigation to placeholder
-      }
+    isGroupActive(item) {
+      return (item.children || []).some((c) => this.$route.path === c.path);
     },
   },
 };
@@ -89,6 +135,7 @@ export default {
   color: #5c6069;
   font-size: 13px;
   border-left: 3px solid transparent;
+  cursor: pointer;
   i {
     font-size: 16px;
   }
@@ -101,6 +148,17 @@ export default {
     color: var(--geo-primary);
     border-left-color: var(--geo-primary);
     font-weight: 600;
+  }
+  &.sub {
+    padding-left: 36px;
+    font-size: 12px;
+  }
+  &.group-head .chevron {
+    margin-left: auto;
+    transition: transform 0.15s ease;
+    &.open {
+      transform: rotate(180deg);
+    }
   }
 }
 .sider-foot {
