@@ -7,7 +7,13 @@ const {
   ecommerceRanking,
   referenceSources,
   createMockTaskResult,
+  monitorBrands,
+  monitorDialogs,
+  monitorProgress,
+  mentionHeatmap,
+  referTrend,
 } = require('./mock-data');
+const { computeOverview } = require('./metrics');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -42,7 +48,7 @@ function auth(req, res, next) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json(ok({ service: 'a3geo-clone-mvp1', ts: Date.now() }));
+  res.json(ok({ service: 'a3geo-clone-mvp-monitor', ts: Date.now() }));
 });
 
 app.get('/api/platforms', (_req, res) => {
@@ -155,6 +161,79 @@ app.get('/api/rank/ecommerce', (_req, res) => {
 
 app.get('/api/rank/reference-sources', (_req, res) => {
   res.json(ok(referenceSources()));
+});
+
+/** Brand monitor — list plans */
+app.get('/api/geo/brand/list', auth, (_req, res) => {
+  res.json(ok({ list: monitorBrands }));
+});
+
+app.get('/api/geo/monitor/progress_today', auth, (_req, res) => {
+  res.json(ok(monitorProgress()));
+});
+
+/**
+ * Aligns with live POST /dso/api/geo/rf/overview shape (0–1 rates).
+ * Body: { brand_plan_id }
+ */
+app.post('/api/geo/rf/overview', auth, (req, res) => {
+  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
+  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
+  const overview = computeOverview({
+    dialogs: monitorDialogs,
+    brandId: brand.id,
+    brandName: brand.name,
+    competitorBrandIds: brand.competitors || [],
+  });
+  res.json(ok(overview));
+});
+
+app.post('/api/geo/rf/refer_rate_heatmap', auth, (req, res) => {
+  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
+  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
+  res.json(ok(mentionHeatmap({ brandName: brand.name, dialogs: monitorDialogs, brandPlanId: brand.id })));
+});
+
+app.post('/api/geo/rf/refer_trend', auth, (req, res) => {
+  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
+  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
+  res.json(ok({ series: referTrend({ brandName: brand.name, dialogs: monitorDialogs, brandPlanId: brand.id }) }));
+});
+
+app.post('/api/geo/rf/sov_trend', auth, (req, res) => {
+  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
+  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
+  const pool = monitorDialogs.filter((d) => d.brand_plan_id === brand.id);
+  const dates = [...new Set(pool.map((d) => d.date))].sort();
+  const series = dates.map((date) => {
+    const day = pool.filter((d) => d.date === date);
+    const overview = computeOverview({
+      dialogs: day,
+      brandId: brand.id,
+      brandName: brand.name,
+      competitorBrandIds: brand.competitors || [],
+    });
+    return { date, sov: overview.sov, valid_rank_count: overview.valid_rank_count };
+  });
+  res.json(ok({ series }));
+});
+
+app.post('/api/geo/rf/avg_refer_rank', auth, (req, res) => {
+  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
+  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
+  const pool = monitorDialogs.filter((d) => d.brand_plan_id === brand.id);
+  const dates = [...new Set(pool.map((d) => d.date))].sort();
+  const series = dates.map((date) => {
+    const day = pool.filter((d) => d.date === date);
+    const ranks = [];
+    for (const d of day) {
+      const hits = (d.mentions || []).filter((m) => m.brand === brand.name);
+      if (hits.length) ranks.push(Math.min(...hits.map((m) => m.rank)));
+    }
+    const avg = ranks.length ? ranks.reduce((a, b) => a + b, 0) / ranks.length : 0;
+    return { date, avg_rank: Number(avg.toFixed(2)), valid_rank_count: ranks.length };
+  });
+  res.json(ok({ series }));
 });
 
 if (isProd) {

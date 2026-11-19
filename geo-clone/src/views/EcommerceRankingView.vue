@@ -6,8 +6,9 @@
         <p class="muted">{{ data.description }}</p>
       </div>
       <div class="switches">
-        <button type="button" class="sw" disabled>品牌榜</button>
+        <button type="button" class="sw" title="线上 /brandRanking 直接访问为 404，暂未重建" disabled>品牌榜</button>
         <button type="button" class="sw active">电商品牌榜</button>
+        <router-link class="sw ghost" to="/referenceSourceRanking">引用来源</router-link>
       </div>
     </div>
 
@@ -155,10 +156,19 @@ export default {
   background: #fff;
   border-radius: 999px;
   padding: 8px 14px;
+  color: inherit;
   &.active {
     background: var(--geo-primary);
     border-color: var(--geo-primary);
     color: #fff;
+  }
+  &.ghost {
+    display: inline-flex;
+    align-items: center;
+  }
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 }
 .industry-tabs {
