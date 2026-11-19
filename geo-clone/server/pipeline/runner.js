@@ -1,5 +1,6 @@
 const { store, idempotencyKey } = require('./store');
 const { fetchMockRawResponses } = require('./mock-adapters');
+const { fetchRawBatch } = require('./scheduler/fetch-raw-batch');
 const { parseRawList } = require('./parse');
 const { aggregateParsed } = require('./aggregate');
 const { platforms: platformCatalog, monitorBrands } = require('../mock-data');
@@ -46,7 +47,7 @@ function createTask({ prompt, brand, platforms: selected, points_cost, idempoten
     word: brand ? String(brand).trim() : '',
     brand_plan_id: brandPlan ? brandPlan.id : null,
     created_at: nowStamp(),
-    status: 'running',
+    status: 'queued',
     platforms: selected,
     results: [],
     points_cost,
@@ -55,6 +56,7 @@ function createTask({ prompt, brand, platforms: selected, points_cost, idempoten
       stage: 'created',
       stages: [{ name: 'created', at: new Date().toISOString() }],
       adapter: 'mock',
+      scheduler: 'in-process',
     },
   };
   store.saveTask(task);
@@ -74,15 +76,42 @@ function markStage(task, stage, extra = {}) {
 }
 
 /**
- * Run: 存原文 → 解析 → 聚合. Idempotent resume from last completed stage.
+ * Default fetchRawBatch via in-process scheduler + mock adapter.
+ * Injectable for tests (design P1 port).
  */
-async function runPipeline(task, { stepDelayMs = 200, force = false } = {}) {
+async function defaultFetchRawBatch(input) {
+  return fetchRawBatch({
+    ...input,
+    platformCatalog: input.platformCatalog || platformCatalog,
+    delayMs: 0,
+    schedulerConfig: input.schedulerConfig || {
+      max_inflight_jobs: 8,
+      per_platform_inflight: 2,
+      max_attempts: 3,
+      base_backoff_ms: 5,
+      max_backoff_ms: 40,
+      rate_limit: { capacity: 50, refill_per_sec: 100 },
+    },
+  });
+}
+
+/**
+ * Run: enqueue platforms → fetch_raw (scheduler) → parse → aggregate.
+ * @param {object} task
+ * @param {{ stepDelayMs?: number, force?: boolean, fetchRawBatch?: Function, useScheduler?: boolean }} [opts]
+ */
+async function runPipeline(task, opts = {}) {
+  const { stepDelayMs = 200, force = false, useScheduler = true } = opts;
+  const fetchBatch = opts.fetchRawBatch || defaultFetchRawBatch;
+
   if (task.status === 'done' && !force) {
     return task;
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let current = store.getTask(task.task_id) || task;
+  current.status = 'running';
+  store.saveTask(current);
   const startFrom = force ? 0 : stageIndex(current.pipeline && current.pipeline.stage);
 
   let rawList = store.getRaw(current.task_id);
@@ -92,12 +121,36 @@ async function runPipeline(task, { stepDelayMs = 200, force = false } = {}) {
   if (force || startFrom <= stageIndex('fetch_raw') || rawList.length === 0) {
     markStage(current, 'fetch_raw');
     await sleep(stepDelayMs);
-    rawList = fetchMockRawResponses({
-      prompt: current.prompt,
-      brand: current.word,
-      platforms: current.platforms,
-      platformCatalog,
-    });
+
+    if (useScheduler) {
+      const batch = await fetchBatch({
+        task_id: current.task_id,
+        prompt: current.prompt,
+        brand: current.word,
+        platforms: current.platforms,
+        platformCatalog,
+      });
+      rawList = batch.rawList;
+      current.pipeline.fetch_stats = batch.stats;
+      current.pipeline.partial = Boolean(batch.partial);
+      if (batch.partial) current.status = 'partial';
+      if (batch.allFailed) {
+        current.status = 'failed';
+        current.error = 'all platform adapters failed';
+        store.saveTask(current);
+        store.saveRaw(current.task_id, rawList);
+        return current;
+      }
+    } else {
+      // legacy sync path (tests / fallback)
+      rawList = fetchMockRawResponses({
+        prompt: current.prompt,
+        brand: current.word,
+        platforms: current.platforms,
+        platformCatalog,
+      });
+    }
+
     store.saveRaw(current.task_id, rawList);
     current.raw_count = rawList.length;
     store.saveTask(current);
@@ -107,7 +160,9 @@ async function runPipeline(task, { stepDelayMs = 200, force = false } = {}) {
     markStage(current, 'parse', { raw_count: rawList.length });
     await sleep(stepDelayMs);
     const brandPlan = resolveBrandPlan(current.word);
-    parsed = parseRawList(rawList.length ? rawList : store.getRaw(current.task_id), {
+    const usable = (rawList.length ? rawList : store.getRaw(current.task_id)).filter((r) => !r._failed);
+    const toParse = usable.length ? usable : rawList.length ? rawList : store.getRaw(current.task_id);
+    parsed = parseRawList(toParse, {
       prompt: current.prompt,
       brand: current.word,
       brand_plan_id: brandPlan ? brandPlan.id : current.brand_plan_id,
@@ -134,7 +189,8 @@ async function runPipeline(task, { stepDelayMs = 200, force = false } = {}) {
   current.overview = aggregate.overview;
   current.resources = aggregate.resources;
   current.sentiment_summary = aggregate.sentiment_summary;
-  current.status = 'done';
+  if (current.status !== 'partial') current.status = 'done';
+  else current.status = 'done'; // UI treats done; partial flag kept on pipeline.partial
   markStage(current, 'done');
   store.saveTask(current);
   return current;
@@ -174,4 +230,5 @@ module.exports = {
   getPipelineSnapshot,
   store,
   idempotencyKey,
+  defaultFetchRawBatch,
 };
