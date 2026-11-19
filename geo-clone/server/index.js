@@ -15,6 +15,7 @@ const {
 } = require('./mock-data');
 const { computeOverview } = require('./metrics');
 const monitorPages = require('./monitor-pages');
+const monitorRemain = require('./monitor-remain');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -278,6 +279,50 @@ app.post('/api/geo/dashboard/overview', auth, (req, res) => {
 
 app.post('/api/geo/dashboard/platforms', auth, (req, res) => {
   res.json(ok(monitorPages.dashboardPlatforms(brandPlanIdFrom(req))));
+});
+
+/** AI 对话记录 — live: /geo/monitor/monitor_record */
+app.post('/api/geo/monitor/monitor_record', auth, (req, res) => {
+  res.json(ok(monitorRemain.dialogRecords(brandPlanIdFrom(req))));
+});
+
+/** 作品引用追踪 — live: /geo/article_monitor/statistics + list */
+app.post('/api/geo/article_monitor/statistics', auth, (req, res) => {
+  const data = monitorRemain.contentOptimization(brandPlanIdFrom(req));
+  res.json(ok(data.stats));
+});
+
+app.post('/api/geo/article_monitor/list', auth, (req, res) => {
+  const data = monitorRemain.contentOptimization(brandPlanIdFrom(req));
+  res.json(ok({ list: data.works, hotSites: data.hotSites, hotTags: data.hotTags }));
+});
+
+app.post('/api/geo/article_monitor/top', auth, (req, res) => {
+  const data = monitorRemain.contentOptimization(brandPlanIdFrom(req));
+  res.json(ok({ hotSites: data.hotSites, hotTags: data.hotTags }));
+});
+
+/** 品牌监测设置 */
+app.get('/api/geo/brand/management', auth, (_req, res) => {
+  res.json(ok(monitorRemain.brandManagementList()));
+});
+
+app.get('/api/geo/brand/detail/:id', auth, (req, res) => {
+  res.json(ok(monitorRemain.brandPlanDetail(req.params.id)));
+});
+
+/** 导出数据与报告 */
+app.post('/api/geo/report/history', auth, (req, res) => {
+  res.json(ok(monitorRemain.reportHistory(brandPlanIdFrom(req))));
+});
+
+app.post('/api/geo/export/report_gen', auth, (req, res) => {
+  res.json(ok(monitorRemain.reportGenerate(req.body || {})));
+});
+
+/** AI 问题库 */
+app.post('/api/geo/question/library/list', auth, (req, res) => {
+  res.json(ok(monitorRemain.questionLibrary(brandPlanIdFrom(req))));
 });
 
 if (isProd) {
