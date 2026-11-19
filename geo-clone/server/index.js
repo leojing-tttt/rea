@@ -7,10 +7,7 @@ const {
   ecommerceRanking,
   referenceSources,
   monitorBrands,
-  monitorDialogs,
   monitorProgress,
-  mentionHeatmap,
-  referTrend,
 } = require('./mock-data');
 const { computeOverview } = require('./metrics');
 const monitorPages = require('./monitor-pages');
@@ -30,9 +27,8 @@ const sessions = new Map();
 /** @type {Array<object>} */
 let history = [...seedHistory];
 
-/** Seed + pipeline-produced dialogs for monitor metric endpoints */
-function dialogPool() {
-  return pipeline.mergedDialogs(monitorDialogs);
+function brandPlanIdFrom(req) {
+  return (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
 }
 
 function ok(data, msg = 'ok') {
@@ -226,39 +222,26 @@ app.get('/api/geo/monitor/progress_today', auth, (_req, res) => {
 });
 
 /**
- * Aligns with live POST /dso/api/geo/rf/overview shape (0–1 rates).
+ * Brand mentions — pipeline-primary dialog pool via monitor-bridge.
  * Body: { brand_plan_id }
  */
 app.post('/api/geo/rf/overview', auth, (req, res) => {
-  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
-  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
-  const overview = computeOverview({
-    dialogs: dialogPool(),
-    brandId: brand.id,
-    brandName: brand.name,
-    competitorBrandIds: brand.competitors || [],
-  });
-  overview._meta = overview._meta || {};
-  overview._meta.dialog_sources = ['seed', 'pipeline'];
-  res.json(ok(overview));
+  res.json(ok(monitorBridge.brandMentionsOverview(brandPlanIdFrom(req))));
 });
 
 app.post('/api/geo/rf/refer_rate_heatmap', auth, (req, res) => {
-  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
-  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
-  res.json(ok(mentionHeatmap({ brandName: brand.name, dialogs: dialogPool(), brandPlanId: brand.id })));
+  res.json(ok(monitorBridge.brandMentionsHeatmap(brandPlanIdFrom(req))));
 });
 
 app.post('/api/geo/rf/refer_trend', auth, (req, res) => {
-  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
-  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
-  res.json(ok({ series: referTrend({ brandName: brand.name, dialogs: dialogPool(), brandPlanId: brand.id }) }));
+  res.json(ok(monitorBridge.brandMentionsReferTrend(brandPlanIdFrom(req))));
 });
 
 app.post('/api/geo/rf/sov_trend', auth, (req, res) => {
-  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
-  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
-  const pool = dialogPool().filter((d) => d.brand_plan_id === brand.id);
+  const id = brandPlanIdFrom(req);
+  const brand = monitorBrands.find((b) => b.id === id) || monitorBrands[0];
+  const { dialogs, _pipeline } = monitorBridge.combinedDialogs(brand);
+  const pool = dialogs.filter((d) => d.brand_plan_id === brand.id);
   const dates = [...new Set(pool.map((d) => d.date))].sort();
   const series = dates.map((date) => {
     const day = pool.filter((d) => d.date === date);
@@ -270,13 +253,14 @@ app.post('/api/geo/rf/sov_trend', auth, (req, res) => {
     });
     return { date, sov: overview.sov, valid_rank_count: overview.valid_rank_count };
   });
-  res.json(ok({ series }));
+  res.json(ok({ series, _pipeline }));
 });
 
 app.post('/api/geo/rf/avg_refer_rank', auth, (req, res) => {
-  const brandPlanId = (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
-  const brand = monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
-  const pool = dialogPool().filter((d) => d.brand_plan_id === brand.id);
+  const id = brandPlanIdFrom(req);
+  const brand = monitorBrands.find((b) => b.id === id) || monitorBrands[0];
+  const { dialogs, _pipeline } = monitorBridge.combinedDialogs(brand);
+  const pool = dialogs.filter((d) => d.brand_plan_id === brand.id);
   const dates = [...new Set(pool.map((d) => d.date))].sort();
   const series = dates.map((date) => {
     const day = pool.filter((d) => d.date === date);
@@ -288,28 +272,29 @@ app.post('/api/geo/rf/avg_refer_rank', auth, (req, res) => {
     const avg = ranks.length ? ranks.reduce((a, b) => a + b, 0) / ranks.length : 0;
     return { date, avg_rank: Number(avg.toFixed(2)), valid_rank_count: ranks.length };
   });
-  res.json(ok({ series }));
+  res.json(ok({ series, _pipeline }));
 });
 
-function brandPlanIdFrom(req) {
-  return (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
-}
-
-/** AI 引用来源 — seed + pipeline citations */
+/** AI 引用来源 — pipeline-merged citations */
 app.post('/api/geo/resource/statistics', auth, (req, res) => {
   const id = brandPlanIdFrom(req);
   const seed = monitorPages.resourceStatistics(id);
-  res.json(ok(monitorBridge.mergeResourceStatistics(seed, id)));
+  const articles = (monitorPages.resourceArticleList(id).list || []);
+  res.json(ok(monitorBridge.mergeResourceStatistics(seed, id, articles)));
 });
 
 app.post('/api/geo/resource/statistics/site_category', auth, (req, res) => {
   const id = brandPlanIdFrom(req);
   const seed = monitorPages.resourceSiteCategory(id);
-  res.json(ok(monitorBridge.mergeSiteCategory(seed, id)));
+  const articles = (monitorPages.resourceArticleList(id).list || []);
+  res.json(ok(monitorBridge.mergeSiteCategory(seed, id, articles)));
 });
 
 app.post('/api/geo/resource/statistics/platform_site', auth, (req, res) => {
-  res.json(ok(monitorPages.resourceSiteRanking(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.resourceSiteRanking(id);
+  const articles = (monitorPages.resourceArticleList(id).list || []);
+  res.json(ok(monitorBridge.mergeSiteRanking(seed, id, articles)));
 });
 
 app.post('/api/geo/resource/list', auth, (req, res) => {
@@ -318,7 +303,7 @@ app.post('/api/geo/resource/list', auth, (req, res) => {
   res.json(ok(monitorBridge.mergeArticleList(seed.list || [], id)));
 });
 
-/** 舆情 — seed + pipeline sentiment */
+/** 舆情 — pipeline-primary when dialogs exist */
 app.post('/api/geo/sentiment/overview', auth, (req, res) => {
   const id = brandPlanIdFrom(req);
   const seed = monitorPages.sentimentOverview(id);
@@ -326,23 +311,31 @@ app.post('/api/geo/sentiment/overview', auth, (req, res) => {
 });
 
 app.post('/api/geo/sentiment/trend', auth, (req, res) => {
-  res.json(ok(monitorPages.sentimentTrend(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.sentimentTrend(id);
+  res.json(ok(monitorBridge.mergeSentimentTrend(seed, id)));
 });
 
 app.post('/api/geo/sentiment/platforms', auth, (req, res) => {
-  res.json(ok(monitorPages.sentimentPlatforms(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.sentimentPlatforms(id);
+  res.json(ok(monitorBridge.mergeSentimentPlatforms(seed, id)));
 });
 
-/** 数据大盘 — brand_score + platform cards */
+/** 数据大盘 — pipeline-primary metrics */
 app.post('/api/geo/dashboard/overview', auth, (req, res) => {
-  res.json(ok(monitorPages.dashboardOverview(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.dashboardOverview(id);
+  res.json(ok(monitorBridge.dashboardFromPipeline(id, seed)));
 });
 
 app.post('/api/geo/dashboard/platforms', auth, (req, res) => {
-  res.json(ok(monitorPages.dashboardPlatforms(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.dashboardPlatforms(id);
+  res.json(ok(monitorBridge.dashboardPlatformsFromPipeline(id, seed.list || [])));
 });
 
-/** AI 对话记录 — seed + pipeline parsed dialogs */
+/** AI 对话记录 — pipeline rows first */
 app.post('/api/geo/monitor/monitor_record', auth, (req, res) => {
   const id = brandPlanIdFrom(req);
   const seed = monitorRemain.dialogRecords(id);
