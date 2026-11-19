@@ -14,6 +14,7 @@ const monitorPages = require('./monitor-pages');
 const monitorRemain = require('./monitor-remain');
 const pipeline = require('./pipeline');
 const monitorBridge = require('./pipeline/monitor-bridge');
+const apiMgmt = require('./pipeline/api-mgmt');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -54,7 +55,8 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/platforms', (_req, res) => {
-  res.json(ok(platforms));
+  // Extended with health/quota metadata (additive; original fields preserved)
+  res.json(ok(apiMgmt.getPlatformsExtended(platforms)));
 });
 
 app.post('/api/user/login', (req, res) => {
@@ -363,7 +365,7 @@ app.get('/api/geo/pipeline/summary', auth, (_req, res) => {
   );
 });
 
-/** Scheduler / platform status stubs (design P1–P2; mock GREEN) */
+/** Scheduler / platform status (P1–P3: vault + circuit) */
 app.get('/api/geo/scheduler/status', auth, (_req, res) => {
   res.json(
     ok({
@@ -374,19 +376,62 @@ app.get('/api/geo/scheduler/status', auth, (_req, res) => {
         per_platform_inflight: 2,
         max_attempts: 3,
       },
+      circuits: apiMgmt.circuits.snapshot(),
     })
   );
 });
 
 app.get('/api/geo/platform_status', auth, (_req, res) => {
-  const list = platforms.map((p) => ({
-    platformId: p.id,
-    name: p.name,
-    state: 'GREEN',
-    adapter: 'mock',
-    reason: null,
-  }));
-  res.json(ok({ list }));
+  res.json(ok(apiMgmt.getPlatformStatusList(platforms)));
+});
+
+/** Admin: platform API config (metadata only — no secrets in body) */
+app.get('/api/geo/platform_config', auth, (_req, res) => {
+  res.json(ok({ list: apiMgmt.platformConfig.list() }));
+});
+
+app.put('/api/geo/platform_config/:platformId', auth, (req, res) => {
+  try {
+    const updated = apiMgmt.platformConfig.upsert(req.params.platformId, req.body || {});
+    res.json(ok(updated));
+  } catch (err) {
+    const code = err.code === 'SECRET_IN_BODY' ? 400 : 500;
+    res.json(fail(code, err.message));
+  }
+});
+
+/** Admin: credential metadata (env/file vault — never accept secret values) */
+app.get('/api/geo/credentials', auth, (_req, res) => {
+  res.json(ok({ list: apiMgmt.vault.list() }));
+});
+
+app.put('/api/geo/credentials/:id', auth, (req, res) => {
+  try {
+    const updated = apiMgmt.vault.upsert({ ...(req.body || {}), id: req.params.id });
+    res.json(ok(updated));
+  } catch (err) {
+    const code = err.code === 'SECRET_IN_BODY' || err.code === 'VALIDATION' ? 400 : 500;
+    res.json(fail(code, err.message));
+  }
+});
+
+app.post('/api/geo/credentials', auth, (req, res) => {
+  try {
+    const updated = apiMgmt.vault.upsert(req.body || {});
+    res.json(ok(updated));
+  } catch (err) {
+    const code = err.code === 'SECRET_IN_BODY' || err.code === 'VALIDATION' ? 400 : 500;
+    res.json(fail(code, err.message));
+  }
+});
+
+/** Admin: reset circuit for a platform credential */
+app.post('/api/geo/circuit/reset', auth, (req, res) => {
+  const { platformId, credential_ref } = req.body || {};
+  if (!platformId || !credential_ref) {
+    return res.json(fail(400, 'platformId and credential_ref required'));
+  }
+  res.json(ok(apiMgmt.circuits.reset(platformId, credential_ref)));
 });
 
 /** 作品引用追踪 — live: /geo/article_monitor/statistics + list */

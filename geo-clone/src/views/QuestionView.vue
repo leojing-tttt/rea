@@ -64,6 +64,11 @@
               <div class="platform-head">
                 <span class="dot" :style="{ background: p.color }">{{ p.name.slice(0, 1) }}</span>
                 <span class="name">{{ p.name }}</span>
+                <span
+                  class="health-dot"
+                  :class="(p.api && p.api.health) || 'GREEN'"
+                  :title="(p.api && p.api.health) || 'GREEN'"
+                />
               </div>
               <div class="modes">
                 <label v-for="m in p.modes" :key="p.id + m.id" class="mode">
@@ -486,6 +491,22 @@ export default {
 .name {
   font-size: 12px;
   font-weight: 600;
+}
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #67c23a;
+}
+.health-dot.GREEN {
+  background: #67c23a;
+}
+.health-dot.YELLOW {
+  background: #e6a23c;
+}
+.health-dot.RED {
+  background: #f56c6c;
 }
 .modes {
   display: grid;

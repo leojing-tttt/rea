@@ -9,6 +9,7 @@ const KINDS = {
   AUTH: 'AUTH',
   QUOTA_EXHAUSTED: 'QUOTA_EXHAUSTED',
   PARSE_IRRELEVANT: 'PARSE_IRRELEVANT',
+  CIRCUIT_OPEN: 'CIRCUIT_OPEN',
   UNKNOWN: 'UNKNOWN',
 };
 
@@ -28,7 +29,12 @@ class AdapterError extends Error {
   }
 
   get retryable() {
-    if (this.kind === KINDS.AUTH || this.kind === KINDS.QUOTA_EXHAUSTED || this.kind === KINDS.PARSE_IRRELEVANT) {
+    if (
+      this.kind === KINDS.AUTH ||
+      this.kind === KINDS.QUOTA_EXHAUSTED ||
+      this.kind === KINDS.PARSE_IRRELEVANT ||
+      this.kind === KINDS.CIRCUIT_OPEN
+    ) {
       return false;
     }
     return true;
