@@ -27,7 +27,7 @@ const routes = [
       {
         path: 'dashboard',
         name: 'monitorDashboard',
-        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        component: () => import('@/views/monitor/DashboardView.vue'),
         meta: { title: '数据大盘', nav: 'monitor', auth: true },
       },
       {
@@ -38,12 +38,14 @@ const routes = [
       },
       {
         path: 'sentiment',
-        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        name: 'monitorSentiment',
+        component: () => import('@/views/monitor/SentimentView.vue'),
         meta: { title: '品牌舆情追踪', nav: 'monitor', auth: true },
       },
       {
         path: 'sources',
-        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        name: 'monitorSources',
+        component: () => import('@/views/monitor/SourcesView.vue'),
         meta: { title: 'AI引用来源', nav: 'monitor', auth: true },
       },
       {

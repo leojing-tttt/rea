@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "NODE_ENV=production node server/index.js",
-    "test:metrics": "node server/metrics.test.js"
+    "test:metrics": "node server/metrics.test.js && node server/monitor-pages.test.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

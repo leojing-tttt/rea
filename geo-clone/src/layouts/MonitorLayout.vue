@@ -34,10 +34,10 @@ export default {
   data() {
     return {
       menu: [
-        { path: '/monitor/dashboard', label: '数据大盘', icon: 'el-icon-data-board', soon: true, disabled: false },
+        { path: '/monitor/dashboard', label: '数据大盘', icon: 'el-icon-data-board' },
         { path: '/monitor/brandMentions', label: '提及率和排名', icon: 'el-icon-s-data' },
-        { path: '/monitor/sentiment', label: '品牌舆情追踪', icon: 'el-icon-chat-dot-round', soon: true },
-        { path: '/monitor/sources', label: 'AI引用来源', icon: 'el-icon-link', soon: true },
+        { path: '/monitor/sentiment', label: '品牌舆情追踪', icon: 'el-icon-chat-dot-round' },
+        { path: '/monitor/sources', label: 'AI引用来源', icon: 'el-icon-link' },
         { path: '/monitor/tasks', label: 'AI对话记录', icon: 'el-icon-document', soon: true },
         { path: '/monitor/contentOptimization', label: '作品引用追踪', icon: 'el-icon-files', soon: true },
         { path: '/monitor/brandManagement', label: '品牌监测设置', icon: 'el-icon-setting', soon: true },
