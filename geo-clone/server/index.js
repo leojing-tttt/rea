@@ -15,6 +15,14 @@ const monitorRemain = require('./monitor-remain');
 const pipeline = require('./pipeline');
 const monitorBridge = require('./pipeline/monitor-bridge');
 const apiMgmt = require('./pipeline/api-mgmt');
+const {
+  authMode,
+  UcClient,
+  mapUcUser,
+  createAuthMiddleware,
+  stripBearer,
+  mockCredits,
+} = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,10 +31,14 @@ const isProd = process.env.NODE_ENV === 'production';
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-/** @type {Map<string, { token: string, phone: string, name: string, points: number }>} */
+/** @type {Map<string, { token: string, phone?: string, email?: string, name: string, points: number, uid?: string }>} */
 const sessions = new Map();
 /** @type {Array<object>} */
 let history = [...seedHistory];
+
+const ucClient = new UcClient({
+  baseUrl: process.env.USER_CENTER_BASE_URL,
+});
 
 function brandPlanIdFrom(req) {
   return (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
@@ -40,18 +52,40 @@ function fail(code, msg) {
   return { code, msg, data: null };
 }
 
-function auth(req, res, next) {
-  const token = req.headers.authorization || '';
-  const session = sessions.get(token);
-  if (!session) {
-    return res.json(fail(401, '请先登录'));
-  }
-  req.user = session;
-  next();
+const auth = createAuthMiddleware({ sessions, ucClient, fail });
+
+function publicUser(session) {
+  const phone = session.phone
+    ? String(session.phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+    : null;
+  return {
+    name: session.name,
+    phone,
+    email: session.email || null,
+    points: mockCredits.get(session),
+    vip: session.vip || '企业版',
+    source: session.source || (authMode() === 'uc' ? 'uc' : 'mock'),
+  };
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json(ok({ service: 'a3geo-clone-pipeline', ts: Date.now() }));
+  res.json(
+    ok({
+      service: 'a3geo-clone-pipeline',
+      ts: Date.now(),
+      auth_mode: authMode(),
+    })
+  );
+});
+
+app.get('/api/auth/config', (_req, res) => {
+  res.json(
+    ok({
+      mode: authMode(),
+      user_center_configured: Boolean(process.env.USER_CENTER_BASE_URL),
+      login_fields: authMode() === 'uc' ? ['email', 'password'] : ['phone', 'password'],
+    })
+  );
 });
 
 app.get('/api/platforms', (_req, res) => {
@@ -59,8 +93,48 @@ app.get('/api/platforms', (_req, res) => {
   res.json(ok(apiMgmt.getPlatformsExtended(platforms)));
 });
 
-app.post('/api/user/login', (req, res) => {
-  const { phone, password } = req.body || {};
+app.post('/api/user/login', async (req, res) => {
+  const mode = authMode();
+  const body = req.body || {};
+
+  if (mode === 'uc') {
+    const email = body.email || body.username || body.phone;
+    const password = body.password;
+    if (!email || !String(email).includes('@')) {
+      return res.json(fail(400, '请输入邮箱'));
+    }
+    if (!password || String(password).length < 1) {
+      return res.json(fail(400, '请输入密码'));
+    }
+    try {
+      const { token } = await ucClient.userLogin({ email, password });
+      let profile = null;
+      try {
+        profile = await ucClient.info(token);
+      } catch (_) {
+        profile = await ucClient.dspLogin(token);
+      }
+      const session = mapUcUser(profile || { email, username: String(email).split('@')[0] }, {
+        token,
+      });
+      mockCredits.ensure(session);
+      session.points = mockCredits.get(session);
+      sessions.set(token, session);
+      return res.json(
+        ok({
+          token,
+          uid: session.uid,
+          user: publicUser(session),
+        })
+      );
+    } catch (err) {
+      const code = err.code === 'UC_CONFIG' || err.code === 'UC_NETWORK' ? 502 : 401;
+      return res.json(fail(code, err.message || '登录失败'));
+    }
+  }
+
+  // mock mode — phone login
+  const { phone, password } = body;
   if (!phone || !/^1\d{10}$/.test(String(phone))) {
     return res.json(fail(400, '请输入正确手机号'));
   }
@@ -71,33 +145,42 @@ app.post('/api/user/login', (req, res) => {
   const session = {
     token,
     phone: String(phone),
+    uid: `uid_${phone}`,
     name: String(phone).slice(-4),
-    points: 13321,
+    points: mockCredits.defaultBalance,
+    source: 'mock',
+    vip: '企业版',
   };
+  mockCredits.set(session, mockCredits.defaultBalance);
   sessions.set(token, session);
   res.json(
     ok({
       token,
-      uid: `uid_${phone}`,
-      user: { name: session.name, phone: session.phone, points: session.points, vip: '企业版' },
+      uid: session.uid,
+      user: publicUser(session),
     })
   );
 });
 
 app.get('/api/user/info', auth, (req, res) => {
-  res.json(
-    ok({
-      name: req.user.name,
-      phone: req.user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
-      points: req.user.points,
-      vip: '企业版',
-    })
-  );
+  res.json(ok(publicUser(req.user)));
+});
+
+app.post('/api/user/logout', async (req, res) => {
+  const token = stripBearer(req.headers.authorization || '');
+  if (token) {
+    sessions.delete(token);
+    if (authMode() === 'uc') {
+      ucClient.clearVerifyCache(token);
+      await ucClient.logout(token);
+    }
+  }
+  res.json(ok({ logged_out: true }));
 });
 
 app.get('/api/geo/history', (req, res) => {
-  const token = req.headers.authorization || '';
-  const loggedIn = sessions.has(token);
+  const token = stripBearer(req.headers.authorization || '');
+  const loggedIn = token && sessions.has(token);
   const list = loggedIn ? history : seedHistory.filter((h) => h.isExample);
   res.json(ok({ result: list }));
 });
@@ -132,10 +215,12 @@ app.post('/api/geo/begin', auth, (req, res) => {
     );
   }
 
-  if (req.user.points < cost) {
+  // Points stay mock (not UC RBAC points)
+  const deducted = mockCredits.ensureAndDeduct(req.user, cost);
+  if (!deducted.ok) {
     return res.json(fail(402, '积分不足'));
   }
-  req.user.points -= cost;
+  req.user.points = deducted.points;
 
   const task = pipeline.createTask({
     prompt,
@@ -146,10 +231,12 @@ app.post('/api/geo/begin', auth, (req, res) => {
   });
 
   if (task._idempotent_hit && task.status === 'done') {
+    mockCredits.set(req.user, deducted.points + cost);
+    req.user.points = mockCredits.get(req.user);
     return res.json(
       ok({
         task_id: task.task_id,
-        points: req.user.points + cost, // refund — should not reach after prior check
+        points: req.user.points,
         points_cost: 0,
         idempotent_hit: true,
       })
