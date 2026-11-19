@@ -45,9 +45,36 @@ function aggregateParsed(parsedList, opts = {}) {
     competitorBrandIds: opts.competitors || [],
   });
 
-  // citation rollup
+  // citation rollup (structured)
   const allCites = dialogs.flatMap((d) => d.citations || []);
   const sites = new Set(allCites.map((c) => c.site));
+  const total_log_count = allCites.reduce((s, c) => s + (c.log_count || 1), 0);
+  const byType = new Map();
+  for (const c of allCites) {
+    const key = c.site_type_key || 'other';
+    if (!byType.has(key)) {
+      byType.set(key, {
+        key,
+        name: c.site_type || key,
+        site_count: new Set(),
+        resource_count: 0,
+        log_count: 0,
+      });
+    }
+    const row = byType.get(key);
+    row.site_count.add(c.site);
+    row.resource_count += 1;
+    row.log_count += c.log_count || 1;
+  }
+  const site_categories = [...byType.values()].map((r) => ({
+    name: r.name,
+    key: r.key,
+    site_count: r.site_count.size,
+    resource_count: r.resource_count,
+    log_count: r.log_count,
+    rate: total_log_count ? Number((r.log_count / total_log_count).toFixed(4)) : 0,
+  }));
+
   const sentimentBuckets = { positive: 0, neutral: 0, negative: 0 };
   for (const d of parsedList || []) {
     const label = (d.sentiment && d.sentiment.label) || 'neutral';
@@ -61,8 +88,10 @@ function aggregateParsed(parsedList, opts = {}) {
     results: toUiResults(parsedList),
     resources: {
       resource_count: allCites.length,
-      total_log_count: allCites.length,
+      total_log_count,
       site_count: sites.size,
+      site_categories,
+      citations: allCites,
     },
     sentiment_summary: {
       sentiment_count: (parsedList || []).length,

@@ -83,8 +83,8 @@ const routes = [
   {
     path: '/toolbox',
     name: 'toolbox',
-    component: () => import('@/views/GateView.vue'),
-    meta: { title: '工具箱', nav: 'toolbox', auth: true, gate: 'toolbox' },
+    component: () => import('@/views/ToolboxView.vue'),
+    meta: { title: '工具箱', nav: 'toolbox', auth: true },
   },
   {
     path: '/ecommerceBrandRanking',

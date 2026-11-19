@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const DATA_ROOT = path.join(__dirname, '..', '..', '.data', 'pipeline');
 
 /**
- * In-memory + optional disk persistence for pipeline artifacts.
+ * In-memory + disk persistence for pipeline artifacts.
  * Disk layout: .data/pipeline/{taskId}/task.json|raw/*.json|parsed.json|aggregate.json
+ * Index: .data/pipeline/_index/by_idempotency.json
  */
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -22,7 +24,24 @@ function writeJson(filePath, data) {
 
 function readJson(filePath) {
   if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function idempotencyKey({ prompt, brand, platforms }) {
+  const normPlatforms = (platforms || [])
+    .map((p) => `${p.platformId || p.id || p}:${p.modeId || p.mode || ''}`)
+    .sort()
+    .join(',');
+  const payload = JSON.stringify({
+    prompt: String(prompt || '').trim(),
+    brand: String(brand || '').trim(),
+    platforms: normPlatforms,
+  });
+  return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 24);
 }
 
 class PipelineStore {
@@ -35,16 +54,66 @@ class PipelineStore {
     this.parsedByTask = new Map();
     /** @type {Map<string, object>} */
     this.aggregateByTask = new Map();
+    /** @type {Map<string, string>} idempotency → task_id */
+    this.idempotencyIndex = new Map();
+    this._hydrated = false;
+  }
+
+  hydrateFromDisk() {
+    if (this._hydrated) return { tasks: this.tasks.size };
+    ensureDir(DATA_ROOT);
+    const indexFile = path.join(DATA_ROOT, '_index', 'by_idempotency.json');
+    const index = readJson(indexFile) || {};
+    for (const [key, taskId] of Object.entries(index)) {
+      this.idempotencyIndex.set(key, taskId);
+    }
+    const entries = fs.existsSync(DATA_ROOT) ? fs.readdirSync(DATA_ROOT) : [];
+    let loaded = 0;
+    for (const name of entries) {
+      if (name.startsWith('_')) continue;
+      const task = readJson(path.join(DATA_ROOT, name, 'task.json'));
+      if (!task || !task.task_id) continue;
+      this.tasks.set(task.task_id, task);
+      const parsed = readJson(path.join(DATA_ROOT, name, 'parsed.json'));
+      if (parsed && parsed.list) this.parsedByTask.set(task.task_id, parsed.list);
+      const agg = readJson(path.join(DATA_ROOT, name, 'aggregate.json'));
+      if (agg) this.aggregateByTask.set(task.task_id, agg);
+      const rawIndex = readJson(path.join(DATA_ROOT, name, 'raw_index.json'));
+      if (rawIndex) {
+        const raw = this.getRaw(task.task_id);
+        if (raw.length) this.rawByTask.set(task.task_id, raw);
+      }
+      if (task.idempotency_key) this.idempotencyIndex.set(task.idempotency_key, task.task_id);
+      loaded += 1;
+    }
+    this._hydrated = true;
+    this.persistIdempotencyIndex();
+    return { tasks: loaded };
+  }
+
+  persistIdempotencyIndex() {
+    writeJson(path.join(DATA_ROOT, '_index', 'by_idempotency.json'), Object.fromEntries(this.idempotencyIndex));
   }
 
   saveTask(task) {
     this.tasks.set(task.task_id, task);
     writeJson(path.join(taskDir(task.task_id), 'task.json'), task);
+    if (task.idempotency_key) {
+      this.idempotencyIndex.set(task.idempotency_key, task.task_id);
+      this.persistIdempotencyIndex();
+    }
     return task;
   }
 
   getTask(taskId) {
     return this.tasks.get(taskId) || readJson(path.join(taskDir(taskId), 'task.json'));
+  }
+
+  findByIdempotency(key) {
+    if (!key) return null;
+    const taskId = this.idempotencyIndex.get(key);
+    if (!taskId) return null;
+    return this.getTask(taskId);
   }
 
   saveRaw(taskId, rawList) {
@@ -97,13 +166,49 @@ class PipelineStore {
     return this.aggregateByTask.get(taskId) || readJson(path.join(taskDir(taskId), 'aggregate.json'));
   }
 
-  /** All parsed dialogs across tasks (for monitor merge). */
   allParsedDialogs() {
     const out = [];
+    const seen = new Set();
     for (const [taskId, list] of this.parsedByTask.entries()) {
-      for (const d of list) out.push({ ...d, task_id: taskId });
+      for (const d of list) {
+        const id = d.id || `${taskId}_${d.platform_id}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ ...d, task_id: taskId });
+      }
+    }
+    // also scan disk for tasks not fully in memory maps
+    if (fs.existsSync(DATA_ROOT)) {
+      for (const name of fs.readdirSync(DATA_ROOT)) {
+        if (name.startsWith('_') || this.parsedByTask.has(name)) continue;
+        const parsed = readJson(path.join(DATA_ROOT, name, 'parsed.json'));
+        if (!parsed || !parsed.list) continue;
+        for (const d of parsed.list) {
+          const id = d.id || `${name}_${d.platform_id}`;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          out.push({ ...d, task_id: name });
+        }
+      }
     }
     return out;
+  }
+
+  allCitations() {
+    const cites = [];
+    for (const d of this.allParsedDialogs()) {
+      for (const c of d.citations || []) {
+        cites.push({
+          ...c,
+          platform: d.platform,
+          task_id: d.task_id,
+          brand_plan_id: d.brand_plan_id,
+          date: d.date,
+          sentiment: (d.sentiment && d.sentiment.label) || 'neutral',
+        });
+      }
+    }
+    return cites;
   }
 
   listTasks() {
@@ -112,5 +217,6 @@ class PipelineStore {
 }
 
 const store = new PipelineStore();
+store.hydrateFromDisk();
 
-module.exports = { store, PipelineStore, DATA_ROOT };
+module.exports = { store, PipelineStore, DATA_ROOT, idempotencyKey };
