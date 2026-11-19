@@ -84,7 +84,7 @@
         </div>
         <div v-if="activeTask && activeTask.status === 'running'" class="running card">
           <i class="el-icon-loading"></i>
-          正在向 {{ (activeTask.platforms || []).length || selectedKeys.length }} 个平台发起 mock 检索…
+          流水线进行中（{{ pipelineStageLabel }}）· mock 平台原文 → 解析 → 聚合…
         </div>
       </template>
 
@@ -95,9 +95,21 @@
             <p class="muted">
               <span v-if="activeTask.word">品牌：{{ activeTask.word }} · </span>
               状态：已完成 · 消耗积分 {{ activeTask.points_cost || '-' }}
+              <span v-if="activeTask.pipeline"> · 流水线 {{ activeTask.pipeline.stage }}</span>
             </p>
           </div>
           <el-button type="primary" plain round @click="resetComposer">开启新搜索</el-button>
+        </div>
+        <div v-if="activeTask.overview" class="pipeline-overview card">
+          <div class="ov-title">聚合指标（来自流水线 parse→aggregate）</div>
+          <div class="ov-grid">
+            <div><strong>{{ activeTask.overview.ai_count }}</strong><span>对话次数</span></div>
+            <div><strong>{{ pct(activeTask.overview.refer_rate) }}%</strong><span>品牌提及率</span></div>
+            <div><strong>{{ pct(activeTask.overview.sov) }}%</strong><span>SOV</span></div>
+            <div><strong>{{ activeTask.overview.avg_rank || '—' }}</strong><span>平均排名</span></div>
+            <div><strong>{{ activeTask.overview.mention_count }}</strong><span>提及次数</span></div>
+            <div><strong>{{ (activeTask.resources && activeTask.resources.site_count) || 0 }}</strong><span>引用站点</span></div>
+          </div>
         </div>
         <div class="result-grid">
           <article v-for="(r, idx) in activeTask.results || []" :key="idx" class="result-card card">
@@ -106,6 +118,14 @@
               <span class="muted">{{ r.mode }}</span>
               <el-tag v-if="r.mentioned" size="mini" type="danger" effect="plain">提及品牌 · 排名 {{ r.mention_rank }}</el-tag>
               <el-tag v-else size="mini" type="info" effect="plain">未提及</el-tag>
+              <el-tag
+                v-if="r.sentiment"
+                size="mini"
+                :type="r.sentiment.label === 'positive' ? 'success' : r.sentiment.label === 'negative' ? 'danger' : 'info'"
+                effect="plain"
+              >
+                {{ r.sentiment.label }}
+              </el-tag>
             </header>
             <p class="answer">{{ r.answer }}</p>
             <div class="cites">
@@ -174,6 +194,17 @@ export default {
       if (!q) return this.history;
       return this.history.filter((h) => `${h.prompt} ${h.word || ''}`.includes(q));
     },
+    pipelineStageLabel() {
+      const stage = (this.activeTask && this.activeTask.pipeline && this.activeTask.pipeline.stage) || 'created';
+      const map = {
+        created: '创建任务',
+        fetch_raw: '存原文',
+        parse: '解析',
+        aggregate: '聚合',
+        done: '完成',
+      };
+      return map[stage] || stage;
+    },
   },
   watch: {
     platforms: {
@@ -201,6 +232,9 @@ export default {
     platformName(id) {
       const p = this.platforms.find((x) => x.id === id);
       return (p && p.name) || id;
+    },
+    pct(x) {
+      return (100 * (x || 0)).toFixed(0);
     },
     onSelectAll(v) {
       this.selectedKeys = v ? [...this.allKeys] : [];
@@ -505,6 +539,34 @@ export default {
   margin: 12px 0 16px;
   h2 {
     margin: 0 0 6px;
+  }
+}
+.pipeline-overview {
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.ov-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #5c6069;
+}
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  text-align: center;
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  strong {
+    font-size: 20px;
+  }
+  span {
+    font-size: 12px;
+    color: #909399;
   }
 }
 .result-grid {
