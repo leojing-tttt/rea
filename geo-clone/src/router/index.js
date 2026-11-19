@@ -20,9 +20,58 @@ const routes = [
   },
   {
     path: '/monitor',
-    name: 'monitor',
-    component: () => import('@/views/GateView.vue'),
-    meta: { title: '品牌监测', nav: 'monitor', auth: true, gate: 'monitor' },
+    component: () => import('@/layouts/MonitorLayout.vue'),
+    meta: { title: '品牌监测', nav: 'monitor', auth: true },
+    children: [
+      { path: '', redirect: 'brandMentions' },
+      {
+        path: 'dashboard',
+        name: 'monitorDashboard',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: '数据大盘', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'brandMentions',
+        name: 'brandMentions',
+        component: () => import('@/views/monitor/BrandMentionsView.vue'),
+        meta: { title: '品牌提及率', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'sentiment',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: '品牌舆情追踪', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'sources',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: 'AI引用来源', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'tasks',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: 'AI对话记录', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'contentOptimization',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: '作品引用追踪', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'brandManagement',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: '品牌词库设置', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'BrandReport',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: '导出数据与报告', nav: 'monitor', auth: true },
+      },
+      {
+        path: 'aiQuestionLibrary',
+        component: () => import('@/views/monitor/MonitorPlaceholderView.vue'),
+        meta: { title: 'AI问题库', nav: 'monitor', auth: true },
+      },
+    ],
   },
   {
     path: '/toolbox',
@@ -58,7 +107,7 @@ const router = new VueRouter({
 
 router.beforeEach((to, _from, next) => {
   document.title = `${to.meta.title || 'A3GEO'}-A3GEO-GEO搜索排名优化平台`;
-  if (to.meta.auth && !store.getters.isLoggedIn) {
+  if (to.matched.some((r) => r.meta.auth) && !store.getters.isLoggedIn) {
     store.commit('SET_LOGIN_DIALOG', true);
     next({ path: '/question', query: { redirect: to.fullPath } });
     return;

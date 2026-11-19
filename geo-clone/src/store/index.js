@@ -7,10 +7,24 @@ Vue.use(Vuex);
 const TOKEN_KEY = 'a3geo_mvp_token';
 const USER_KEY = 'a3geo_mvp_user';
 
+function readStoredAuth() {
+  if (typeof localStorage === 'undefined') return { token: '', user: null };
+  const token = localStorage.getItem(TOKEN_KEY) || '';
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+  } catch (_) {
+    user = null;
+  }
+  return { token, user };
+}
+
+const storedAuth = readStoredAuth();
+
 export default new Vuex.Store({
   state: {
-    token: '',
-    user: null,
+    token: storedAuth.token,
+    user: storedAuth.user,
     loginDialog: false,
     platforms: [],
     history: [],

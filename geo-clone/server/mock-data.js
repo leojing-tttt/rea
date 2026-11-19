@@ -178,10 +178,131 @@ function createMockTaskResult(task) {
   return { ...task, status: 'done', results };
 }
 
+const monitorBrands = [
+  {
+    id: 'plan_junlebao',
+    name: '君乐宝',
+    planLabel: '君乐宝-君乐宝优萃宝爱-大小吾图词',
+    competitors: ['飞鹤', '伊利', '雀巢'],
+  },
+  {
+    id: 'plan_huggies',
+    name: '好奇',
+    planLabel: '好奇-小森林系列监测',
+    competitors: ['帮宝适', '妙而舒'],
+  },
+];
+
+/** Seed AI dialogs used to compute rf/overview via dictionary formulas */
+function buildMonitorDialogs() {
+  const platforms = ['豆包', 'DeepSeek', '元宝', '千问', '文心', 'Kimi', 'AI抖音'];
+  const questions = [
+    '哪个奶粉品牌适合一段宝宝',
+    '国产奶粉推荐',
+    '君乐宝优萃怎么样',
+    '纸尿裤推荐',
+    '敏感肌婴儿纸尿裤',
+  ];
+  const dialogs = [];
+  let id = 1;
+  // Junlebao plan — denser mentions
+  for (let i = 0; i < 40; i += 1) {
+    const platform = platforms[i % platforms.length];
+    const mentionedSelf = i % 5 !== 0; // 80% mention rate-ish
+    const mentions = [];
+    if (mentionedSelf) {
+      const rank = [1, 1, 2, 2, 3, 4][i % 6];
+      mentions.push({ brand: '君乐宝', rank, count: 1 + (i % 3) });
+      if (i % 2 === 0) mentions.push({ brand: '飞鹤', rank: rank === 1 ? 2 : 1, count: 1 });
+      if (i % 3 === 0) mentions.push({ brand: '伊利', rank: 3, count: 1 });
+    } else {
+      mentions.push({ brand: '飞鹤', rank: 1, count: 1 });
+      mentions.push({ brand: '雀巢', rank: 2, count: 1 });
+    }
+    dialogs.push({
+      id: `dlg_${id++}`,
+      brand_plan_id: 'plan_junlebao',
+      platform,
+      question: questions[i % 3],
+      date: `2026-11-${String(10 + (i % 8)).padStart(2, '0')}`,
+      mentions,
+    });
+  }
+  // Huggies plan
+  for (let i = 0; i < 24; i += 1) {
+    const mentions = [];
+    if (i % 4 !== 0) {
+      mentions.push({ brand: '好奇', rank: (i % 3) + 1, count: 1 + (i % 2) });
+      if (i % 2 === 0) mentions.push({ brand: '帮宝适', rank: 2, count: 1 });
+    } else {
+      mentions.push({ brand: '帮宝适', rank: 1, count: 1 });
+    }
+    dialogs.push({
+      id: `dlg_${id++}`,
+      brand_plan_id: 'plan_huggies',
+      platform: platforms[i % platforms.length],
+      question: questions[3 + (i % 2)],
+      date: `2026-11-${String(12 + (i % 6)).padStart(2, '0')}`,
+      mentions,
+    });
+  }
+  return dialogs;
+}
+
+const monitorDialogs = buildMonitorDialogs();
+
+function monitorProgress() {
+  return {
+    status: 'running',
+    label: '正在执行',
+    done: 492,
+    total: 630,
+    percent: 78,
+    platform_count: 7,
+    question_count: 12,
+  };
+}
+
+function mentionHeatmap({ brandName, dialogs, brandPlanId }) {
+  const pool = dialogs.filter((d) => d.brand_plan_id === brandPlanId);
+  const questions = [...new Set(pool.map((d) => d.question))];
+  const plats = [...new Set(pool.map((d) => d.platform))];
+  const cells = [];
+  for (const q of questions) {
+    for (const p of plats) {
+      const subset = pool.filter((d) => d.question === q && d.platform === p);
+      const hit = subset.filter((d) => (d.mentions || []).some((m) => m.brand === brandName)).length;
+      const rate = subset.length ? hit / subset.length : 0;
+      cells.push({ question: q, platform: p, refer_rate: Number(rate.toFixed(4)), ai_count: subset.length });
+    }
+  }
+  return { questions, platforms: plats, cells };
+}
+
+function referTrend({ brandName, dialogs, brandPlanId }) {
+  const pool = dialogs.filter((d) => d.brand_plan_id === brandPlanId);
+  const dates = [...new Set(pool.map((d) => d.date))].sort();
+  return dates.map((date) => {
+    const day = pool.filter((d) => d.date === date);
+    const hit = day.filter((d) => (d.mentions || []).some((m) => m.brand === brandName)).length;
+    return {
+      date,
+      refer_rate: day.length ? Number((hit / day.length).toFixed(4)) : 0,
+      ai_count: day.length,
+      valid_rank_count: hit,
+    };
+  });
+}
+
 module.exports = {
   platforms,
   seedHistory,
   ecommerceRanking,
   referenceSources,
   createMockTaskResult,
+  monitorBrands,
+  monitorDialogs,
+  monitorProgress,
+  mentionHeatmap,
+  referTrend,
 };
