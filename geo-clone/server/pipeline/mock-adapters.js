@@ -70,13 +70,20 @@ function buildRawText({ prompt, brand, platformName, mode, seed, platformIndex }
 
   const rankingLines = ranked.map((r) => `${r.rank}. ${r.brand}`).join('\n');
   const citeLines = cites
-    .map((c) => `- 【${c.site}】${c.title} (${c.url})`)
+    .map((c, i) =>
+      i === 0 && seed % 2 === 0
+        ? `- [${c.title}](${c.url})`
+        : `- 【${c.site}】${c.title} (${c.url})`
+    )
     .join('\n');
 
   let toneSentence = '整体评价较为均衡。';
+  // Alias mention in prose so parseInlineMentions can count
+  const aliasHint =
+    brand === '君乐宝' && mentionFocus ? '（优萃系列也常被提及）' : '';
   if (tone === 'positive') {
     toneSentence = mentionFocus
-      ? `${brand} 口碑不错，推荐指数较高，品质稳定值得考虑。`
+      ? `${brand}${aliasHint} 口碑不错，推荐指数较高，品质稳定值得考虑。`
       : '该品类头部品牌口碑普遍较好。';
   } else if (tone === 'negative') {
     toneSentence = mentionFocus

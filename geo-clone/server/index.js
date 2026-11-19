@@ -16,6 +16,7 @@ const { computeOverview } = require('./metrics');
 const monitorPages = require('./monitor-pages');
 const monitorRemain = require('./monitor-remain');
 const pipeline = require('./pipeline');
+const monitorBridge = require('./pipeline/monitor-bridge');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -117,6 +118,22 @@ app.post('/api/geo/begin', auth, (req, res) => {
   }
 
   const cost = Math.max(1, selected.length) * 2;
+  const idempotent = req.body && req.body.idempotent !== false;
+
+  // Idempotent replay: same prompt+brand+platforms → reuse done task (no re-charge)
+  const existingKey = pipeline.idempotencyKey({ prompt, brand, platforms: selected });
+  const prior = idempotent ? pipeline.store.findByIdempotency(existingKey) : null;
+  if (prior && prior.status === 'done') {
+    return res.json(
+      ok({
+        task_id: prior.task_id,
+        points: req.user.points,
+        points_cost: 0,
+        idempotent_hit: true,
+      })
+    );
+  }
+
   if (req.user.points < cost) {
     return res.json(fail(402, '积分不足'));
   }
@@ -127,34 +144,48 @@ app.post('/api/geo/begin', auth, (req, res) => {
     brand,
     platforms: selected,
     points_cost: cost,
+    idempotent,
   });
 
-  // Async worker (light in-process queue)
-  setTimeout(() => {
-    pipeline
-      .runPipeline(task, { stepDelayMs: 250 })
-      .then((done) => {
-        history = [
-          {
-            task_id: done.task_id,
-            prompt: done.prompt,
-            word: done.word,
-            created_at: done.created_at,
-            isExample: false,
-            status: 'done',
-            platform_count: done.platforms.length,
-            pipeline_stage: 'done',
-          },
-          ...history,
-        ].slice(0, 50);
+  if (task._idempotent_hit && task.status === 'done') {
+    return res.json(
+      ok({
+        task_id: task.task_id,
+        points: req.user.points + cost, // refund — should not reach after prior check
+        points_cost: 0,
+        idempotent_hit: true,
       })
-      .catch((err) => {
-        const failed = pipeline.store.getTask(task.task_id) || task;
-        failed.status = 'failed';
-        failed.error = String(err && err.message ? err.message : err);
-        pipeline.store.saveTask(failed);
-      });
-  }, 100);
+    );
+  }
+
+  // Async worker (light in-process queue); resume-safe
+  if (!task._in_flight) {
+    setTimeout(() => {
+      pipeline
+        .runPipeline(task, { stepDelayMs: 250 })
+        .then((done) => {
+          history = [
+            {
+              task_id: done.task_id,
+              prompt: done.prompt,
+              word: done.word,
+              created_at: done.created_at,
+              isExample: false,
+              status: 'done',
+              platform_count: done.platforms.length,
+              pipeline_stage: 'done',
+            },
+            ...history.filter((h) => h.task_id !== done.task_id),
+          ].slice(0, 50);
+        })
+        .catch((err) => {
+          const failed = pipeline.store.getTask(task.task_id) || task;
+          failed.status = 'failed';
+          failed.error = String(err && err.message ? err.message : err);
+          pipeline.store.saveTask(failed);
+        });
+    }, 100);
+  }
 
   res.json(ok({ task_id: task.task_id, points: req.user.points, points_cost: cost }));
 });
@@ -264,13 +295,17 @@ function brandPlanIdFrom(req) {
   return (req.body && req.body.brand_plan_id) || monitorBrands[0].id;
 }
 
-/** AI 引用来源 — live: POST /dso/api/geo/resource/statistics */
+/** AI 引用来源 — seed + pipeline citations */
 app.post('/api/geo/resource/statistics', auth, (req, res) => {
-  res.json(ok(monitorPages.resourceStatistics(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.resourceStatistics(id);
+  res.json(ok(monitorBridge.mergeResourceStatistics(seed, id)));
 });
 
 app.post('/api/geo/resource/statistics/site_category', auth, (req, res) => {
-  res.json(ok(monitorPages.resourceSiteCategory(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.resourceSiteCategory(id);
+  res.json(ok(monitorBridge.mergeSiteCategory(seed, id)));
 });
 
 app.post('/api/geo/resource/statistics/platform_site', auth, (req, res) => {
@@ -278,12 +313,16 @@ app.post('/api/geo/resource/statistics/platform_site', auth, (req, res) => {
 });
 
 app.post('/api/geo/resource/list', auth, (req, res) => {
-  res.json(ok(monitorPages.resourceArticleList(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.resourceArticleList(id);
+  res.json(ok(monitorBridge.mergeArticleList(seed.list || [], id)));
 });
 
-/** 舆情 — live: POST /dso/api/geo/sentiment/overview */
+/** 舆情 — seed + pipeline sentiment */
 app.post('/api/geo/sentiment/overview', auth, (req, res) => {
-  res.json(ok(monitorPages.sentimentOverview(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorPages.sentimentOverview(id);
+  res.json(ok(monitorBridge.mergeSentimentOverview(seed, id)));
 });
 
 app.post('/api/geo/sentiment/trend', auth, (req, res) => {
@@ -303,9 +342,32 @@ app.post('/api/geo/dashboard/platforms', auth, (req, res) => {
   res.json(ok(monitorPages.dashboardPlatforms(brandPlanIdFrom(req))));
 });
 
-/** AI 对话记录 — live: /geo/monitor/monitor_record */
+/** AI 对话记录 — seed + pipeline parsed dialogs */
 app.post('/api/geo/monitor/monitor_record', auth, (req, res) => {
-  res.json(ok(monitorRemain.dialogRecords(brandPlanIdFrom(req))));
+  const id = brandPlanIdFrom(req);
+  const seed = monitorRemain.dialogRecords(id);
+  res.json(ok(monitorBridge.mergeDialogRecords(seed, id)));
+});
+
+/** Settings / toolbox helpers */
+app.get('/api/geo/pipeline/summary', auth, (_req, res) => {
+  const tasks = pipeline.store.listTasks();
+  res.json(
+    ok({
+      task_count: tasks.length,
+      done_count: tasks.filter((t) => t.status === 'done').length,
+      citation_count: pipeline.store.allCitations().length,
+      dialog_count: pipeline.store.allParsedDialogs().length,
+      recent: tasks.slice(0, 8).map((t) => ({
+        task_id: t.task_id,
+        prompt: t.prompt,
+        word: t.word,
+        status: t.status,
+        stage: t.pipeline && t.pipeline.stage,
+        created_at: t.created_at,
+      })),
+    })
+  );
 });
 
 /** 作品引用追踪 — live: /geo/article_monitor/statistics + list */
