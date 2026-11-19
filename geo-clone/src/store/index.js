@@ -119,6 +119,9 @@ export default new Vuex.Store({
         const res = await http.get(`/geo/task/${taskId}`);
         commit('SET_ACTIVE_TASK', res.data);
         if (res.data.status === 'done') return res.data;
+        if (res.data.status === 'failed') {
+          throw new Error(res.data.error || '流水线失败');
+        }
       }
       throw new Error('任务超时');
     },

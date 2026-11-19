@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "NODE_ENV=production node server/index.js",
-    "test:metrics": "node server/metrics.test.js && node server/monitor-pages.test.js && node server/monitor-remain.test.js"
+    "test:metrics": "node server/metrics.test.js && node server/monitor-pages.test.js && node server/monitor-remain.test.js && node server/pipeline/pipeline.test.js",
+    "test:pipeline": "node server/pipeline/pipeline.test.js"
   },
   "dependencies": {
     "axios": "^1.7.9",
