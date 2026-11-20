@@ -57,6 +57,7 @@ export default {
         { key: 'question', label: '实时搜索', path: '/question' },
         { key: 'insight', label: '品牌洞察/报告', path: '/completeAnalysis' },
         { key: 'monitor', label: '品牌监测', path: '/monitor' },
+        { key: 'api-mgmt', label: 'API 管理', path: '/api-mgmt' },
         { key: 'toolbox', label: '工具箱', path: '/toolbox', dropdown: true },
       ],
     };
@@ -72,7 +73,7 @@ export default {
       this.$store.dispatch('openLogin');
     },
     onNav(item) {
-      if (item.key === 'monitor' || item.key === 'toolbox') {
+      if (item.key === 'monitor' || item.key === 'toolbox' || item.key === 'api-mgmt') {
         if (!this.isLoggedIn) this.openLogin();
       }
     },
