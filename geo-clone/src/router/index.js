@@ -81,6 +81,12 @@ const routes = [
     ],
   },
   {
+    path: '/api-mgmt',
+    name: 'apiMgmt',
+    component: () => import('@/views/ApiMgmtView.vue'),
+    meta: { title: 'API 管理', nav: 'api-mgmt', auth: true },
+  },
+  {
     path: '/toolbox',
     name: 'toolbox',
     component: () => import('@/views/ToolboxView.vue'),
