@@ -4,7 +4,7 @@
       <div>
         <h1>API 管理</h1>
         <p class="muted">
-          多平台模型 API 配置与凭证元数据（密钥仅通过环境变量 / 本地文件，表单不提交 secret）
+          多平台模型 API 配置与凭证元数据（密钥仅通过环境变量 / 本地文件，表单不提交 secret）。填了 baseUrl 或 relay 且密钥能解析时，该平台徽章为 live。
         </p>
       </div>
       <div class="head-actions">
@@ -19,6 +19,13 @@
         <span class="muted">{{ platforms.length }} 个平台</span>
       </div>
       <el-table v-loading="loading" :data="platforms" size="small" stripe>
+        <el-table-column label="调用" width="88" align="center">
+          <template slot-scope="{ row }">
+            <el-tag size="mini" :type="row.transport === 'live' ? 'success' : 'info'" effect="plain">
+              {{ row.transport === 'live' ? 'live' : 'mock' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="健康" width="88" align="center">
           <template slot-scope="{ row }">
             <span class="health-pill" :class="row.state || 'GREEN'">
@@ -108,40 +115,44 @@
       append-to-body
       @closed="platformForm = emptyPlatformForm()"
     >
-      <el-form v-if="platformForm" ref="platformForm" :model="platformForm" label-width="120px" size="small">
+      <el-form v-if="platformForm" ref="platformForm" :model="platformForm" label-width="132px" size="small">
         <el-form-item label="平台">
           <span>{{ platformForm.name }} ({{ platformForm.platformId }})</span>
         </el-form-item>
-        <el-form-item label="status">
+        <el-form-item label="状态">
           <el-select v-model="platformForm.status" style="width: 100%">
-            <el-option label="active" value="active" />
-            <el-option label="disabled" value="disabled" />
-            <el-option label="maintenance" value="maintenance" />
+            <el-option label="启用" value="active" />
+            <el-option label="停用" value="disabled" />
+            <el-option label="维护中" value="maintenance" />
           </el-select>
         </el-form-item>
-        <el-form-item label="rpm_limit">
+        <el-form-item label="每分钟上限">
           <el-input-number v-model="platformForm.rpm_limit" :min="1" :max="100000" controls-position="right" />
         </el-form-item>
-        <el-form-item label="daily_quota">
+        <el-form-item label="日配额">
           <el-input-number v-model="platformForm.daily_quota" :min="1" :max="10000000" controls-position="right" />
         </el-form-item>
-        <el-form-item label="credential_ref">
+        <el-form-item label="凭证">
           <el-select v-model="platformForm.credential_ref" filterable allow-create default-first-option style="width: 100%">
             <el-option v-for="c in credentials" :key="c.id" :label="c.id" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="relay">
-          <el-input v-model="platformForm.relay" placeholder="可选中转标识 / URL" clearable />
+        <el-form-item label="中转地址">
+          <el-input v-model="platformForm.relay" placeholder="填写完整网址时按该地址原样提交；留空则使用接口根地址" clearable />
         </el-form-item>
-        <el-form-item label="baseUrl">
-          <el-input v-model="platformForm.baseUrl" placeholder="可选中转站 base URL" clearable />
+        <el-form-item label="接口根地址">
+          <el-input v-model="platformForm.baseUrl" placeholder="例如 https://你的中转站，会自动补上聊天接口路径" clearable />
         </el-form-item>
-        <el-form-item label="adapter_mode">
+        <el-form-item label="模型">
+          <el-input v-model="platformForm.model" placeholder="可选。不填时使用平台标识" clearable />
+        </el-form-item>
+        <el-form-item label="适配器">
           <el-select v-model="platformForm.adapter_mode" style="width: 100%">
-            <el-option label="mock" value="mock" />
-            <el-option label="real" value="real" />
-            <el-option label="per-platform" value="per-platform" />
+            <el-option label="模拟" value="mock" />
+            <el-option label="真实" value="real" />
+            <el-option label="按平台" value="per-platform" />
           </el-select>
+          <div class="muted tiny">是否走真实调用，取决于中转地址或接口根地址，以及密钥能否解析，与这个选项无关。</div>
         </el-form-item>
       </el-form>
       <span slot="footer">
@@ -235,6 +246,7 @@ function emptyPlatformForm() {
     credential_ref: '',
     relay: '',
     baseUrl: '',
+    model: '',
     adapter_mode: 'mock',
   };
 }
@@ -317,6 +329,8 @@ export default {
             credential_ref: s.credential_ref || cfg.credential_ref,
             relay: s.relay || cfg.relay || null,
             baseUrl: s.baseUrl || cfg.baseUrl || null,
+            model: cfg.model || s.model || null,
+            transport: s.transport || 'mock',
             adapter_mode: cfg.adapter_mode || s.adapter || 'mock',
           };
         });
@@ -342,6 +356,7 @@ export default {
         credential_ref: row.credential_ref || '',
         relay: row.relay || '',
         baseUrl: row.baseUrl || '',
+        model: row.model || '',
         adapter_mode: row.adapter_mode || 'mock',
       };
       this.platformDialogVisible = true;
@@ -358,6 +373,7 @@ export default {
           credential_ref: f.credential_ref || null,
           relay: f.relay || null,
           baseUrl: f.baseUrl || null,
+          model: f.model || null,
           adapter_mode: f.adapter_mode || 'mock',
         });
         this.$message.success('平台配置已保存');

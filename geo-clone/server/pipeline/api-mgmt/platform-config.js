@@ -2,8 +2,8 @@
  * Per-platform API / quota / relay config (design §5, P3).
  * Metadata only — no secrets. Additive + idempotent upserts.
  *
- * Future 中转站: set `relay` + `baseUrl` once; adapters will POST
- * { platformId, modeId, prompt } to the relay without per-platform fetch here.
+ * Live HTTP: absolute `relay` is POSTed as-is; otherwise `{baseUrl}/v1/chat/completions`.
+ * Optional `model` overrides the chat-completions model (default: platformId).
  */
 
 const fs = require('fs');
@@ -43,6 +43,7 @@ function sanitize(rec) {
     adapter_mode,
     relay,
     baseUrl,
+    model,
     notes,
     updated_at,
   } = rec;
@@ -57,6 +58,7 @@ function sanitize(rec) {
     adapter_mode: adapter_mode || 'mock',
     relay: relay || null,
     baseUrl: baseUrl || null,
+    model: model || null,
     notes: notes || null,
     updated_at: updated_at || new Date().toISOString(),
   };

@@ -457,7 +457,7 @@ app.get('/api/geo/scheduler/status', auth, (_req, res) => {
   res.json(
     ok({
       implementation: 'in-process',
-      adapter_mode: 'mock',
+      adapter_mode: 'per-platform',
       defaults: {
         max_inflight_jobs: 8,
         per_platform_inflight: 2,

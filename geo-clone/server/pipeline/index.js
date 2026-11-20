@@ -6,6 +6,8 @@ module.exports = {
   fetchRawBatch: require('./scheduler/fetch-raw-batch').fetchRawBatch,
   InProcessScheduler: require('./scheduler/queue').InProcessScheduler,
   createMockAdapter: require('./adapters/mock-adapter').createMockAdapter,
+  createHttpAdapter: require('./adapters/http-adapter').createHttpAdapter,
+  createPerPlatformAdapter: require('./adapters/per-platform-adapter').createPerPlatformAdapter,
   AdapterError: require('./adapters/errors').AdapterError,
   KINDS: require('./adapters/errors').KINDS,
   parseRawList: require('./parse').parseRawList,
