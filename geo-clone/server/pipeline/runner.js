@@ -76,7 +76,7 @@ function markStage(task, stage, extra = {}) {
 }
 
 /**
- * Default fetchRawBatch via in-process scheduler + mock adapter.
+ * Default fetchRawBatch via in-process scheduler + per-platform adapter.
  * Injectable for tests (design P1 port).
  */
 async function defaultFetchRawBatch(input) {
@@ -131,6 +131,9 @@ async function runPipeline(task, opts = {}) {
         platformCatalog,
       });
       rawList = batch.rawList;
+      const usedAdapters = new Set((rawList || []).map((r) => r.adapter).filter(Boolean));
+      if (usedAdapters.has('http') && usedAdapters.size > 1) current.pipeline.adapter = 'mixed';
+      else if (usedAdapters.has('http')) current.pipeline.adapter = 'http';
       current.pipeline.fetch_stats = batch.stats;
       current.pipeline.partial = Boolean(batch.partial);
       if (batch.partial) current.status = 'partial';

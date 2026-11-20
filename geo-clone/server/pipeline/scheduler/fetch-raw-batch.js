@@ -4,9 +4,9 @@
  */
 
 const { InProcessScheduler } = require('./queue');
-const { createMockAdapter } = require('../adapters/mock-adapter');
+const { createPerPlatformAdapter } = require('../adapters/per-platform-adapter');
 const { platforms: defaultCatalog } = require('../../mock-data');
-const { beforeDispatch, afterDispatch, credentialRefFor } = require('../api-mgmt');
+const { beforeDispatch, afterDispatch, credentialRefFor, platformConfig } = require('../api-mgmt');
 
 /**
  * @param {object} input
@@ -23,12 +23,17 @@ const { beforeDispatch, afterDispatch, credentialRefFor } = require('../api-mgmt
  */
 async function fetchRawBatch(input) {
   const catalog = input.platformCatalog || defaultCatalog;
+  const adapterOpts = input.adapterOpts || {};
   const adapter =
     input.adapter ||
-    createMockAdapter({
+    createPerPlatformAdapter({
       platformCatalog: catalog,
       delayMs: input.delayMs || 0,
-      ...(input.adapterOpts || {}),
+      failKinds: adapterOpts.failKinds,
+      failRemaining: adapterOpts.failRemaining,
+      fetchImpl: input.fetchImpl,
+      resolveCredentials: input.resolveCredentials,
+      timeoutMs: input.timeoutMs,
     });
 
   const scheduler = input.scheduler || new InProcessScheduler(input.schedulerConfig || {});
@@ -42,6 +47,7 @@ async function fetchRawBatch(input) {
     const platformId = p.platformId || p.id || p;
     const modeId = p.modeId || p.mode || 'web_fast';
     const credential_ref = useMgmt ? credentialRefFor(platformId) : p.credential_ref || 'mock';
+    const cfg = useMgmt ? platformConfig.get(platformId) : null;
 
     if (useMgmt) {
       const gate = beforeDispatch(platformId);
@@ -68,8 +74,9 @@ async function fetchRawBatch(input) {
         credential_ref: gate.credential_ref,
         // Never put apiKey / resolved secrets on the job object that may be snapshotted
         platformIndex,
-        _relay: gate.resolved && gate.resolved.relay,
-        _baseUrl: gate.resolved && gate.resolved.baseUrl,
+        _relay: (gate.resolved && gate.resolved.relay) || null,
+        _baseUrl: (gate.resolved && gate.resolved.baseUrl) || null,
+        _model: (cfg && cfg.model) || null,
       });
     } else {
       jobs.push({
@@ -79,6 +86,9 @@ async function fetchRawBatch(input) {
         priority: input.priority != null ? input.priority : 100,
         credential_ref,
         platformIndex,
+        _relay: p.relay || null,
+        _baseUrl: p.baseUrl || null,
+        _model: p.model || null,
       });
     }
   });
@@ -94,10 +104,11 @@ async function fetchRawBatch(input) {
         platformId: job.platformId,
         modeId: job.modeId,
         platformIndex: job.platformIndex || 0,
-        // Mock adapters ignore credentials; real adapters would receive ephemeral resolve separately
+        // credential_ref only — the adapter resolves the secret in memory
         credential_ref: job.credential_ref,
         relay: job._relay || null,
         baseUrl: job._baseUrl || null,
+        model: job._model || null,
       });
       if (useMgmt) {
         afterDispatch(job.platformId, job.credential_ref, { ok: true });
@@ -122,7 +133,7 @@ async function fetchRawBatch(input) {
       platform: e.job.platformId,
       mode: e.job.modeId,
       fetched_at: new Date().toISOString(),
-      adapter: 'mock',
+      adapter: e.error.adapterId || 'mock',
       credential_ref: e.job.credential_ref || null,
       raw_text: `【${e.job.platformId}】adapter failed: ${e.error.kind} — ${e.error.message}`,
       error: {

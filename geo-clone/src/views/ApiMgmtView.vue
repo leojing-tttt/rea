@@ -4,7 +4,7 @@
       <div>
         <h1>API 管理</h1>
         <p class="muted">
-          多平台模型 API 配置与凭证元数据（密钥仅通过环境变量 / 本地文件，表单不提交 secret）
+          多平台模型 API 配置与凭证元数据（密钥仅通过环境变量 / 本地文件，表单不提交 secret）。填了 baseUrl 或 relay 且密钥能解析时，该平台徽章为 live。
         </p>
       </div>
       <div class="head-actions">
@@ -19,6 +19,13 @@
         <span class="muted">{{ platforms.length }} 个平台</span>
       </div>
       <el-table v-loading="loading" :data="platforms" size="small" stripe>
+        <el-table-column label="调用" width="88" align="center">
+          <template slot-scope="{ row }">
+            <el-tag size="mini" :type="row.transport === 'live' ? 'success' : 'info'" effect="plain">
+              {{ row.transport === 'live' ? 'live' : 'mock' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="健康" width="88" align="center">
           <template slot-scope="{ row }">
             <span class="health-pill" :class="row.state || 'GREEN'">
@@ -131,10 +138,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="relay">
-          <el-input v-model="platformForm.relay" placeholder="可选中转标识 / URL" clearable />
+          <el-input v-model="platformForm.relay" placeholder="完整 URL 时原样 POST；留空则用 baseUrl" clearable />
         </el-form-item>
         <el-form-item label="baseUrl">
-          <el-input v-model="platformForm.baseUrl" placeholder="可选中转站 base URL" clearable />
+          <el-input v-model="platformForm.baseUrl" placeholder="https://host — 自动补 /v1/chat/completions" clearable />
+        </el-form-item>
+        <el-form-item label="model">
+          <el-input v-model="platformForm.model" placeholder="可选，默认用 platformId" clearable />
         </el-form-item>
         <el-form-item label="adapter_mode">
           <el-select v-model="platformForm.adapter_mode" style="width: 100%">
@@ -142,6 +152,7 @@
             <el-option label="real" value="real" />
             <el-option label="per-platform" value="per-platform" />
           </el-select>
+          <div class="muted tiny">是否 live 看 baseUrl/relay 和密钥，不看这个下拉。</div>
         </el-form-item>
       </el-form>
       <span slot="footer">
@@ -235,6 +246,7 @@ function emptyPlatformForm() {
     credential_ref: '',
     relay: '',
     baseUrl: '',
+    model: '',
     adapter_mode: 'mock',
   };
 }
@@ -317,6 +329,8 @@ export default {
             credential_ref: s.credential_ref || cfg.credential_ref,
             relay: s.relay || cfg.relay || null,
             baseUrl: s.baseUrl || cfg.baseUrl || null,
+            model: cfg.model || s.model || null,
+            transport: s.transport || 'mock',
             adapter_mode: cfg.adapter_mode || s.adapter || 'mock',
           };
         });
@@ -342,6 +356,7 @@ export default {
         credential_ref: row.credential_ref || '',
         relay: row.relay || '',
         baseUrl: row.baseUrl || '',
+        model: row.model || '',
         adapter_mode: row.adapter_mode || 'mock',
       };
       this.platformDialogVisible = true;
@@ -358,6 +373,7 @@ export default {
           credential_ref: f.credential_ref || null,
           relay: f.relay || null,
           baseUrl: f.baseUrl || null,
+          model: f.model || null,
           adapter_mode: f.adapter_mode || 'mock',
         });
         this.$message.success('平台配置已保存');

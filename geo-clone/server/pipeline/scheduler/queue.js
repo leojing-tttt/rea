@@ -249,6 +249,7 @@ class InProcessScheduler {
           error: {
             kind: adapterErr.kind || KINDS.UNKNOWN,
             message: adapterErr.message || String(err),
+            adapterId: adapterErr.adapterId || null,
           },
         });
         this.stats.failed += 1;

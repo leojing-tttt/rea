@@ -6,6 +6,7 @@ const { vault } = require('./vault');
 const { circuits, HEALTH, STATES } = require('./circuit');
 const { platformConfig } = require('./platform-config');
 const { AdapterError, KINDS } = require('../adapters/errors');
+const { classifyTransport } = require('../adapters/http-adapter');
 
 /**
  * Resolve credential_ref for a platform (config override → vault default).
@@ -56,6 +57,7 @@ function beforeDispatch(platformId) {
     // Attach platform relay/baseUrl from config if vault record lacks them
     if (!resolved.relay && cfg && cfg.relay) resolved.relay = cfg.relay;
     if (!resolved.baseUrl && cfg && cfg.baseUrl) resolved.baseUrl = cfg.baseUrl;
+    if (!resolved.model && cfg && cfg.model) resolved.model = cfg.model;
     return {
       ok: true,
       credential_ref,
@@ -104,6 +106,27 @@ function afterDispatch(platformId, credential_ref, { ok, error } = {}) {
 }
 
 /**
+ * live = callable relay/baseUrl plus a real env/file secret.
+ * Returns only the label — never the secret.
+ */
+function transportFor(platformId) {
+  const cfg = platformConfig.get(platformId) || {};
+  const credential_ref = credentialRefFor(platformId);
+  let apiKey = null;
+  let relay = cfg.relay || null;
+  let baseUrl = cfg.baseUrl || null;
+  try {
+    const resolved = vault.resolveCredentials(credential_ref);
+    apiKey = resolved && resolved.apiKey;
+    if (!relay && resolved && resolved.relay) relay = resolved.relay;
+    if (!baseUrl && resolved && resolved.baseUrl) baseUrl = resolved.baseUrl;
+  } catch (_) {
+    apiKey = null;
+  }
+  return classifyTransport({ baseUrl, relay, apiKey });
+}
+
+/**
  * Aggregate status for GET /api/geo/platform_status
  */
 function getPlatformStatusList(catalogPlatforms) {
@@ -132,6 +155,8 @@ function getPlatformStatusList(catalogPlatforms) {
       daily_quota: cfg.daily_quota,
       relay: cfg.relay || (cred && cred.relay) || null,
       baseUrl: cfg.baseUrl || (cred && cred.baseUrl) || null,
+      model: cfg.model || null,
+      transport: transportFor(platformId),
       last_healthy_at: cred && cred.last_healthy_at,
       reason,
     };
@@ -168,6 +193,7 @@ module.exports = {
   beforeDispatch,
   afterDispatch,
   credentialRefFor,
+  transportFor,
   getPlatformStatusList,
   getPlatformsExtended,
   HEALTH,
