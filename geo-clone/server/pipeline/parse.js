@@ -10,7 +10,7 @@
  * - noise / prompt fragments ignored
  *
  * Unknowns (do not invent):
- * - sentiment_score model weights (dictionary U-02) — keyword stub only
+ * - sentiment_score model weights (dictionary U-02) — label/word hits only, score stays null
  * - Top1/Top3 denominators (U-01) — left to metrics.computeOverview provisional
  */
 
@@ -70,7 +70,7 @@ const DEFAULT_BRAND_ALIASES = {
 const NOISE_BRAND = /^(针对|综合|参考|以下|品牌|排序|公开信息|可参考|暂无|明确|回答|mock)/;
 
 const PARSE_UNKNOWNS = {
-  sentiment_score: 'keyword stub only — model unknown (U-02)',
+  sentiment_score: 'model unknown (U-02) — local lexicon sets label and word hits only; score is null',
   top1_top3: 'not computed here; metrics layer provisional (U-01)',
   cite_rate_denominator: 'log_count stub=1 per cite; share denom is local rollup (SRC-05 partial)',
 };
@@ -291,14 +291,15 @@ function parseSentiment(rawText) {
   let label = 'neutral';
   if (pos > neg && pos >= neu) label = 'positive';
   else if (neg > pos) label = 'negative';
-  const score = Math.max(0, Math.min(100, 55 + pos * 12 - neg * 15 + neu * 2));
+  else if (pos === 0 && neg === 0 && neu === 0) label = null;
   return {
     label,
-    score,
+    score: null,
+    score_origin: null,
+    classifier: label ? 'local_keyword_lexicon' : 'none',
     positive_word_hits: pos,
     negative_word_hits: neg,
     neutral_word_hits: neu,
-    _stub: true,
     _unknown: PARSE_UNKNOWNS.sentiment_score,
   };
 }

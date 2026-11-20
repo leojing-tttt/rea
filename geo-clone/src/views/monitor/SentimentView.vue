@@ -32,7 +32,7 @@
 
     <div class="charts-row">
       <div class="card chart-card">
-        <div class="chart-head"><h3>情感得分趋势</h3></div>
+        <div class="chart-head"><h3>情感倾向趋势</h3></div>
         <div ref="trend" class="chart"></div>
       </div>
       <div class="card chart-card">
@@ -42,15 +42,39 @@
     </div>
 
     <div class="card table-card">
-      <div class="chart-head"><h3>分平台舆情</h3></div>
+      <div class="chart-head"><h3>平台舆情表现</h3></div>
       <el-table :data="platforms" size="small" stripe>
         <el-table-column prop="platform" label="平台" width="120" />
         <el-table-column prop="sentiment_count" label="情感对话数" />
-        <el-table-column prop="sentiment_score" label="好感度" />
+        <el-table-column label="好感度" width="90">
+          <template slot-scope="{ row }">{{ row.sentiment_score == null ? '—' : row.sentiment_score }}</template>
+        </el-table-column>
         <el-table-column prop="positive_count" label="正面" />
         <el-table-column prop="neutral_count" label="中性" />
         <el-table-column prop="negative_count" label="负面" />
+        <el-table-column label="正面情感" width="100">
+          <template slot-scope="{ row }">{{ rateText(row.positive_rate) }}</template>
+        </el-table-column>
       </el-table>
+    </div>
+
+    <div class="card table-card">
+      <div class="chart-head"><h3>对话舆情记录</h3></div>
+      <el-table :data="records" size="small" stripe max-height="360">
+        <el-table-column prop="prompt" label="AI问题" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="对话时间" width="160" />
+        <el-table-column prop="platform" label="对话平台" width="110" />
+        <el-table-column label="情感倾向" width="100">
+          <template slot-scope="{ row }">{{ sentimentLabel(row.sentiment) }}</template>
+        </el-table-column>
+        <el-table-column label="好感度" width="80">
+          <template slot-scope="{ row }">{{ row.sentiment_score == null ? '—' : row.sentiment_score }}</template>
+        </el-table-column>
+        <el-table-column prop="positive_word_hits" label="正面词" width="80" />
+        <el-table-column prop="negative_word_hits" label="负面词" width="80" />
+        <el-table-column prop="source_count" label="引用来源" width="90" />
+      </el-table>
+      <el-empty v-if="!records.length" description="暂无情感倾向记录" :image-size="80" />
     </div>
 
     <el-alert
@@ -58,7 +82,7 @@
       type="info"
       :closable="false"
       title="口径说明"
-      description="overview 字段对齐线上 sentiment_count / positive_count / sentiment_score 等；sentiment_score 算法与负面提及率分母仍为 unknown（字典 U-02 / SE-05）。正负计数由 mock 按比例派生。"
+      description="正面/中性/负面情感 = 对应对话数 ÷ 情感对话数（线上 calcSentimentRate）。好感度打分模型与负面提及率分母仍未知，不生成分数。正负词次数来自本地词表或种子标注。"
       show-icon
     />
   </div>
@@ -79,59 +103,62 @@ export default {
       overview: {},
       trend: [],
       platforms: [],
+      records: [],
       charts: {},
     };
   },
   computed: {
     statCards() {
       const o = this.overview;
-      const negRate = o.negative_mention_rate != null ? (100 * o.negative_mention_rate).toFixed(0) : '—';
+      const pct = (rate) => (rate == null ? '—' : (100 * rate).toFixed(2));
       return [
         {
           key: 'score',
-          label: '提及好感度',
-          value: o.sentiment_score || '--',
+          label: '品牌提及好感度',
+          value: o.sentiment_score == null ? '—' : o.sentiment_score,
+          suffix: o.sentiment_score == null ? '' : '分',
           tip: METRIC_TIPS.sentimentScore,
           provisional: true,
         },
         {
           key: 'count',
-          label: '情感对话数',
+          label: '提及品牌AI对话次数',
           value: o.sentiment_count || 0,
           suffix: '次',
           tip: METRIC_TIPS.sentimentCount,
         },
         {
           key: 'pos',
-          label: '正面对话',
-          value: o.positive_count || 0,
-          tip: METRIC_TIPS.polarityCounts,
+          label: '正面情感',
+          value: pct(o.positive_rate),
+          suffix: o.positive_rate == null ? '' : '%',
+          tip: METRIC_TIPS.polarityRate,
         },
         {
           key: 'neu',
-          label: '中性对话',
-          value: o.neutral_count || 0,
-          tip: METRIC_TIPS.polarityCounts,
+          label: '中性情感',
+          value: pct(o.neutral_rate),
+          suffix: o.neutral_rate == null ? '' : '%',
+          tip: METRIC_TIPS.polarityRate,
         },
         {
           key: 'neg',
-          label: '负面对话',
-          value: o.negative_count || 0,
-          tip: METRIC_TIPS.polarityCounts,
+          label: '负面情感',
+          value: pct(o.negative_rate),
+          suffix: o.negative_rate == null ? '' : '%',
+          tip: METRIC_TIPS.polarityRate,
         },
         {
-          key: 'negRate',
-          label: '负面提及率',
-          value: negRate,
-          suffix: '%',
-          tip: METRIC_TIPS.negativeMentionRate,
-          provisional: true,
+          key: 'posWord',
+          label: '对话提及正面词',
+          value: o.positive_word_count || 0,
+          tip: METRIC_TIPS.wordHits,
         },
         {
-          key: 'resPos',
-          label: '正面引用文章',
-          value: o.res_positive_count || 0,
-          tip: 'res_positive_count（线上 overview 字段）',
+          key: 'negWord',
+          label: '对话提及负面词',
+          value: o.negative_word_count || 0,
+          tip: METRIC_TIPS.wordHits,
         },
         {
           key: 'resNeg',
@@ -164,14 +191,16 @@ export default {
     async reload() {
       if (!this.brandPlanId) return;
       const body = { brand_plan_id: this.brandPlanId };
-      const [ov, trend, plats] = await Promise.all([
+      const [ov, trend, plats, records] = await Promise.all([
         http.post('/geo/sentiment/overview', body),
         http.post('/geo/sentiment/trend', body),
         http.post('/geo/sentiment/platforms', body),
+        http.post('/geo/monitor/monitor_record', body),
       ]);
       this.overview = ov.data || {};
       this.trend = (trend.data && trend.data.series) || [];
       this.platforms = (plats.data && plats.data.list) || [];
+      this.records = ((records.data && records.data.list) || []).filter((r) => r.sentiment);
       this.$nextTick(() => {
         this.renderTrend();
         this.renderStack();
@@ -182,9 +211,16 @@ export default {
       if (!this.charts[key]) this.charts[key] = echarts.init(el);
       return this.charts[key];
     },
+    rateText(rate) {
+      return rate == null ? '—' : `${(100 * rate).toFixed(2)}%`;
+    },
+    sentimentLabel(label) {
+      return { positive: '正面', neutral: '中性', negative: '负面' }[label] || '—';
+    },
     renderTrend() {
       const chart = this.ensureChart('trend', this.$refs.trend);
       if (!chart) return;
+      const hasScore = this.trend.some((x) => x.sentiment_score != null);
       chart.setOption({
         tooltip: { trigger: 'axis' },
         grid: { left: 40, right: 16, top: 24, bottom: 32 },
@@ -192,12 +228,14 @@ export default {
         yAxis: { type: 'value', min: 0, max: 100 },
         series: [
           {
-            name: '好感度',
+            name: hasScore ? '好感度' : '正面情感',
             type: 'line',
             smooth: true,
             itemStyle: { color: '#c9677d' },
             areaStyle: { color: 'rgba(201,103,125,0.12)' },
-            data: this.trend.map((x) => x.sentiment_score),
+            data: this.trend.map((x) =>
+              hasScore ? x.sentiment_score : x.positive_rate == null ? null : Number((100 * x.positive_rate).toFixed(2))
+            ),
           },
         ],
       });

@@ -24,7 +24,7 @@
       :closable="false"
       show-icon
       title="Mock 导出"
-      description="report_gen / report/history 为壳层 mock：可生成历史记录条目，不产出真实 PDF/分享包。"
+      description="可生成历史记录并下载 JSON 摘要。线上 PDF / 分享包与日报配置不在本切片。"
       style="margin-bottom: 12px"
     />
 
@@ -43,7 +43,7 @@
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template slot-scope="{ row }">
-            <el-button type="text" size="mini">下载</el-button>
+            <el-button type="text" size="mini" @click="download(row)">下载</el-button>
             <el-button v-if="row.share_url" type="text" size="mini">分享</el-button>
           </template>
         </el-table-column>
@@ -93,10 +93,23 @@ export default {
           type: '监测报告',
         });
         if (res.data) this.rows = [res.data, ...this.rows];
-        this.$message.success('已生成 mock 报告记录');
+        this.$message.success('已生成报告记录');
       } finally {
         this.generating = false;
       }
+    },
+    download(row) {
+      const payload = {
+        ...row,
+        note: '本地 JSON 摘要，不是线上 PDF',
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${row.report_name || 'report'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
     },
   },
 };

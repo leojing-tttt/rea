@@ -44,9 +44,10 @@
     <div class="card table-card">
       <div class="chart-head">
         <h3>对话记录</h3>
-        <div>
-          <el-button type="text" icon="el-icon-setting">列表配置</el-button>
-          <el-button type="text" icon="el-icon-download">导出</el-button>
+        <div class="toolbar">
+          <el-button size="mini" @click="resetFilters">重置</el-button>
+          <el-button size="mini" type="primary" plain @click="applyFilter">搜索</el-button>
+          <el-button size="mini" icon="el-icon-download" @click="exportCsv">导出</el-button>
         </div>
       </div>
       <el-table :data="filtered" size="small" stripe max-height="520">
@@ -62,12 +63,31 @@
         </el-table-column>
         <el-table-column prop="source_count" label="引用来源" width="90" />
         <el-table-column label="操作" width="80" fixed="right">
-          <template>
-            <el-button type="text" size="mini">详情</el-button>
+          <template slot-scope="{ row }">
+            <el-button type="text" size="mini" @click="openDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
+      <el-empty v-if="!filtered.length" description="暂无对话记录" :image-size="80" />
     </div>
+
+    <el-drawer :visible.sync="drawer" title="AI对话详情" size="480px">
+      <div v-if="detail" class="detail">
+        <p><strong>问题：</strong>{{ detail.prompt }}</p>
+        <p><strong>时间：</strong>{{ detail.created_at }}</p>
+        <p><strong>平台：</strong>{{ detail.platform }}</p>
+        <p><strong>情感：</strong>{{ sentimentLabel(detail.sentiment) }}</p>
+        <p><strong>排名：</strong>{{ detail.min_rank != null ? detail.min_rank : '—' }}</p>
+        <p><strong>提及品牌：</strong>{{ detail.mention_brands || '—' }}</p>
+        <h4>回答摘录</h4>
+        <pre>{{ detail.answer_excerpt || '种子对话没有保存回答原文。' }}</pre>
+        <h4>引用来源</h4>
+        <ul v-if="detail.citations && detail.citations.length">
+          <li v-for="(c, i) in detail.citations" :key="i">{{ c.site }} · {{ c.title }}</li>
+        </ul>
+        <p v-else class="muted">引用来源 {{ detail.source_count || 0 }} 条（列表未带回标题时只显示计数）</p>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -87,6 +107,8 @@ export default {
       dialogFilter: 'all',
       sentimentFilter: 'all',
       keyword: '',
+      drawer: false,
+      detail: null,
     };
   },
   computed: {
@@ -132,6 +154,48 @@ export default {
       }
       this.filtered = list;
     },
+    resetFilters() {
+      this.platformFilter = 'all';
+      this.dialogFilter = 'all';
+      this.sentimentFilter = 'all';
+      this.keyword = '';
+      this.applyFilter();
+    },
+    openDetail(row) {
+      this.detail = row;
+      this.drawer = true;
+    },
+    sentimentLabel(label) {
+      return { positive: '正面', neutral: '中性', negative: '负面' }[label] || '—';
+    },
+    exportCsv() {
+      const header = ['AI问题', '对话时间', '对话平台', '问题类型', '热度值', '提及品牌', '提及次数', '排名', '引用来源', '情感'];
+      const lines = [header.join(',')].concat(
+        this.filtered.map((r) =>
+          [
+            r.prompt,
+            r.created_at,
+            r.platform,
+            r.category,
+            r.hot_value,
+            r.mention_brands,
+            r.brand_words_count,
+            r.min_rank == null ? '' : r.min_rank,
+            r.source_count,
+            r.sentiment || '',
+          ]
+            .map((cell) => `"${String(cell == null ? '' : cell).replace(/"/g, '""')}"`)
+            .join(',')
+        )
+      );
+      const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ai-dialog-records.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    },
   },
 };
 </script>
@@ -172,6 +236,21 @@ export default {
   h3 {
     margin: 0;
     font-size: 14px;
+  }
+}
+.toolbar {
+  display: flex;
+  gap: 8px;
+}
+.detail {
+  padding: 0 16px 24px;
+  font-size: 13px;
+  line-height: 1.6;
+  pre {
+    white-space: pre-wrap;
+    background: #f7f8fa;
+    padding: 8px;
+    border-radius: 6px;
   }
 }
 </style>

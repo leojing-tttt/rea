@@ -21,6 +21,13 @@
       <el-select v-model="brandPlanId" size="small" style="min-width: 280px" @change="reload">
         <el-option v-for="b in brands" :key="b.id" :label="b.planLabel" :value="b.id" />
       </el-select>
+      <el-input
+        v-model="keyword"
+        size="small"
+        clearable
+        placeholder="搜索作品标题"
+        style="width: 220px"
+      />
     </div>
 
     <div class="section-title">数据概览</div>
@@ -68,7 +75,7 @@
 
     <div class="card table-card">
       <div class="chart-head"><h3>追踪信息</h3></div>
-      <el-table :data="works" size="small" stripe max-height="360">
+      <el-table :data="filteredWorks" size="small" stripe max-height="360">
         <el-table-column prop="article_title" label="作品标题" min-width="180" show-overflow-tooltip />
         <el-table-column prop="site" label="站点" width="100" />
         <el-table-column prop="category" label="站点类型" width="140" show-overflow-tooltip />
@@ -82,6 +89,7 @@
         <el-table-column prop="question_count" label="引用AI问题" width="100" />
         <el-table-column prop="article_quote_count" label="引用次数" width="90" />
       </el-table>
+      <el-empty v-if="!filteredWorks.length" description="暂无追踪作品" :image-size="80" />
     </div>
   </div>
 </template>
@@ -100,9 +108,15 @@ export default {
       works: [],
       hotSites: [],
       hotTags: [],
+      keyword: '',
     };
   },
   computed: {
+    filteredWorks() {
+      const k = this.keyword.trim();
+      if (!k) return this.works;
+      return this.works.filter((w) => w.article_title && w.article_title.includes(k));
+    },
     statCards() {
       const s = this.stats;
       return [

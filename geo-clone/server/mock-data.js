@@ -193,6 +193,20 @@ const monitorBrands = [
   },
 ];
 
+/**
+ * Fixture polarity for seed dialogs. Counts and rates are derived from these
+ * labels. This is not the live sentiment_score model (U-02).
+ */
+function seedSentiment(i) {
+  if (i % 5 === 0) {
+    return { label: 'negative', positive_word_hits: 0, negative_word_hits: 1, classifier: 'seed_fixture' };
+  }
+  if (i % 3 === 0) {
+    return { label: 'neutral', positive_word_hits: 0, negative_word_hits: 0, classifier: 'seed_fixture' };
+  }
+  return { label: 'positive', positive_word_hits: 1, negative_word_hits: 0, classifier: 'seed_fixture' };
+}
+
 /** Seed AI dialogs used to compute rf/overview via dictionary formulas */
 function buildMonitorDialogs() {
   const platforms = ['豆包', 'DeepSeek', '元宝', '千问', '文心', 'Kimi', 'AI抖音'];
@@ -226,6 +240,7 @@ function buildMonitorDialogs() {
       question: questions[i % 3],
       date: `2026-11-${String(10 + (i % 8)).padStart(2, '0')}`,
       mentions,
+      sentiment: seedSentiment(i),
     });
   }
   // Huggies plan
@@ -244,6 +259,7 @@ function buildMonitorDialogs() {
       question: questions[3 + (i % 2)],
       date: `2026-11-${String(12 + (i % 6)).padStart(2, '0')}`,
       mentions,
+      sentiment: seedSentiment(i + 2),
     });
   }
   return dialogs;
