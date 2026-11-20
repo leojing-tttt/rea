@@ -17,8 +17,14 @@ assert.ok(stats.total_log_count >= stats.resource_count);
 assert.ok(stats.site_count > 0);
 
 const sent = sentimentOverview(brand.id);
-assert.ok(sent.sentiment_count >= 0);
-assert.ok(['positive_count', 'neutral_count', 'negative_count'].every((k) => k in sent));
+assert.ok(sent.sentiment_count > 0);
+assert.strictEqual(
+  sent.positive_count + sent.neutral_count + sent.negative_count,
+  sent.sentiment_count
+);
+assert.strictEqual(sent.positive_rate, Number((sent.positive_count / sent.sentiment_count).toFixed(4)));
+assert.strictEqual(sent.sentiment_score, null);
+assert.strictEqual(sent.negative_mention_rate, null);
 
 const overview = computeOverview({
   dialogs: monitorDialogs,

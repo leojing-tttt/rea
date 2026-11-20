@@ -3,8 +3,9 @@
     <div class="page-head">
       <h1>AI问题库</h1>
       <div class="actions">
-        <el-button size="small" plain :disabled="!selection.length">批量收藏</el-button>
-        <el-button size="small" type="danger" :disabled="!selection.length">批量加入监测</el-button>
+        <el-button size="small" plain :disabled="!selection.length" @click="batchFav(false)">批量取消收藏</el-button>
+        <el-button size="small" plain :disabled="!selection.length" @click="batchFav(true)">批量收藏</el-button>
+        <el-button size="small" type="danger" plain :disabled="!selection.length" @click="batchMonitor">批量监测</el-button>
       </div>
     </div>
 
@@ -57,11 +58,12 @@
         <el-table-column prop="created_at" label="收录时间" width="160" />
         <el-table-column label="操作" width="160" fixed="right">
           <template slot-scope="{ row }">
-            <el-button type="text" size="mini">{{ row.favorite ? '取消收藏' : '收藏' }}</el-button>
-            <el-button type="text" size="mini">{{ row.in_monitor ? '移出监测' : '加入监测' }}</el-button>
+            <el-button type="text" size="mini" @click="toggleFav(row)">{{ row.favorite ? '取消收藏' : '收藏' }}</el-button>
+            <el-button type="text" size="mini" @click="toggleMonitor(row)">{{ row.in_monitor ? '移出监测' : '加入监测' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
+      <el-empty v-if="!filtered.length" description="暂无AI问题" :image-size="80" />
     </div>
   </div>
 </template>
@@ -109,6 +111,23 @@ export default {
       if (!this.brandPlanId) return;
       const res = await http.post('/geo/question/library/list', { brand_plan_id: this.brandPlanId });
       this.rows = (res.data && res.data.list) || [];
+      this.selection = [];
+    },
+    toggleFav(row) {
+      row.favorite = !row.favorite;
+    },
+    toggleMonitor(row) {
+      row.in_monitor = !row.in_monitor;
+    },
+    batchFav(on) {
+      this.selection.forEach((row) => {
+        row.favorite = on;
+      });
+    },
+    batchMonitor() {
+      this.selection.forEach((row) => {
+        row.in_monitor = true;
+      });
     },
   },
 };

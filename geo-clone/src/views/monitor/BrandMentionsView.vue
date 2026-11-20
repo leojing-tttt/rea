@@ -38,6 +38,7 @@
         <div class="stat-value">
           {{ card.value }}<small v-if="card.suffix">{{ card.suffix }}</small>
         </div>
+        <div v-if="card.extra" class="stat-extra">{{ card.extra }}</div>
         <div class="stat-label">
           {{ card.label }}
           <el-tooltip :content="card.tip" placement="top">
@@ -80,7 +81,7 @@
       type="info"
       :closable="false"
       title="指标口径说明"
-      description="提及率 / SOV / 平均排名 / 提及次数按产品 tip 公式由 mock 对话种子计算。Top1/Top3 分母与好感度算法仍为 unknown（见字典）；页面已用 provisional 标注。"
+      description="提及率 / SOV / 平均排名 / 提及次数按产品 tip 计算。Top1/Top3 的「提及次数」按首位/首屏文案从排名派生；提及率分母与好感度打分模型仍未知，百分数标为口径待确认，好感度无上游分数时显示 —。"
       show-icon
     />
   </div>
@@ -119,10 +120,32 @@ export default {
         { key: 'refer', label: '品牌提及率', value: s.referRate, suffix: '%', tip: METRIC_TIPS.referRate },
         { key: 'mc', label: '品牌提及次数', value: s.mentionCount, suffix: '次', tip: METRIC_TIPS.mentionCount },
         { key: 'sov', label: 'SOV', value: s.sov, suffix: '%', tip: METRIC_TIPS.sov },
-        { key: 't1', label: 'Top1(首位)提及率', value: s.top1ReferRate, suffix: '%', tip: METRIC_TIPS.top1ReferRate, provisional: true },
-        { key: 't3', label: 'Top3(首屏)提及率', value: s.top3ReferRate, suffix: '%', tip: METRIC_TIPS.top3ReferRate, provisional: true },
+        {
+          key: 't1',
+          label: 'Top1(首位)提及率',
+          value: s.top1ReferRate,
+          suffix: '%',
+          tip: METRIC_TIPS.top1ReferRate,
+          provisional: true,
+          extra: `首位提及 ${s.top1MentionCount} 次`,
+        },
+        {
+          key: 't3',
+          label: 'Top3(首屏)提及率',
+          value: s.top3ReferRate,
+          suffix: '%',
+          tip: METRIC_TIPS.top3ReferRate,
+          provisional: true,
+          extra: `首屏提及 ${s.top3MentionCount} 次`,
+        },
         { key: 'avg', label: '平均提及排名', value: s.avgRank, suffix: '名', tip: METRIC_TIPS.avgRank },
-        { key: 'sent', label: '品牌提及好感度', value: s.sentimentScore || '--', tip: METRIC_TIPS.sentimentScore, provisional: true },
+        {
+          key: 'sent',
+          label: '品牌提及好感度',
+          value: s.sentimentScore == null ? '—' : s.sentimentScore,
+          tip: METRIC_TIPS.sentimentScore,
+          provisional: true,
+        },
       ];
     },
   },
@@ -313,6 +336,11 @@ export default {
     color: #909399;
     font-weight: 500;
   }
+}
+.stat-extra {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
 }
 .stat-label {
   margin-top: 6px;

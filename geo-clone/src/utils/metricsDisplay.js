@@ -11,8 +11,10 @@ export function mapOverviewToStats(api = {}) {
     sov: (100 * (api.sov || 0)).toFixed(0),
     top1ReferRate: (100 * (api.top1_refer_rate || 0)).toFixed(0),
     top3ReferRate: (100 * (api.top3_refer_rate || 0)).toFixed(0),
+    top1MentionCount: api.top1_mention_count || 0,
+    top3MentionCount: api.top3_mention_count || 0,
     avgRank: api.avg_rank || 0,
-    sentimentScore: api.sentiment_score || 0,
+    sentimentScore: api.sentiment_score == null ? null : api.sentiment_score,
   };
 }
 
@@ -21,9 +23,14 @@ export const METRIC_TIPS = {
   mentionCount: '品牌提及次数 = 所有对话中提及本品牌次数之和；同一次对话可计多次',
   sov: 'SOV = 提及品牌对话 ÷ 所有品牌提及对话总和 × 100%；同一对话内同一品牌只计 1 次',
   avgRank: '平均提及排名 = 本品牌在各 AI 对话中的排名之和 ÷ 提及品牌对话',
-  top1ReferRate: 'Top1 公式未在产品 tip 明示；本 MVP 暂用「排名=1 的对话数 ÷ 对话次数」（provisional）',
-  top3ReferRate: 'Top3 公式未在产品 tip 明示；本 MVP 暂用「排名≤3 的对话数 ÷ 对话次数」（provisional）',
-  sentimentScore: '好感度为综合打分（百分制）；算法细节未在前端暴露，当前为 mock',
+  top1ReferRate:
+    'Top1(首位)提及次数 = 排名为 1 的提及对话数（文案口径）。提及率分母未在产品 tip 闭合，卡片百分数仍是 provisional：次数 ÷ 对话次数。',
+  top3ReferRate:
+    'Top3(首屏)提及次数 = 排名 ≤ 3 的提及对话数（首屏文案 + Top10 并列筛选项；不用电商「排名第三」tip）。提及率分母未闭合，百分数为 provisional。',
+  sentimentScore:
+    '好感度是百分制综合分（产品 tip）。打分模型未在前端暴露，本页不生成分数；有上游 score_origin 时才展示。',
+  polarityRate: '正面/中性/负面情感 = 对应对话数 ÷ 情感对话数（线上 calcSentimentRate）',
+  wordHits: '正/负面词次数来自本地词表或种子标注，不是线上词模型',
   aiCount: '监测期内纳入统计的 AI 对话条数（入池规则 unknown）',
   validRankCount: '至少提及本品牌一次、且可参与排名统计的对话数',
   brandScore:

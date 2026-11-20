@@ -37,6 +37,7 @@ function pipelineDialogsForBrand(brand) {
       mentions_full: d.mentions_full,
       sentiment: d.sentiment,
       citations: d.citations || [],
+      answer_excerpt: d.answer_excerpt || '',
       mention_mode: d.mention_mode,
       source: 'pipeline',
       task_id: d.task_id,
@@ -193,55 +194,35 @@ function mergeSentimentOverview(seedOverview, brandPlanId) {
     return { ...seedOverview, _pipeline };
   }
 
-  const buckets = { positive: 0, neutral: 0, negative: 0 };
-  let scoreSum = 0;
-  let scored = 0;
-  let hasBrand = 0;
-  for (const d of dialogs) {
-    if (d.source === 'pipeline') {
-      const label = (d.sentiment && d.sentiment.label) || 'neutral';
-      buckets[label] = (buckets[label] || 0) + 1;
-      if (d.sentiment && d.sentiment.score != null) {
-        scoreSum += d.sentiment.score;
-        scored += 1;
-      }
-      if ((d.mentions || []).some((m) => m.brand === brand.name)) hasBrand += 1;
-    }
-  }
-
-  const pipeOnly = dialogs.filter((d) => d.source === 'pipeline');
   const overview = computeOverview({
-    dialogs: pipeOnly.length ? pipeOnly : dialogs,
+    dialogs,
     brandId: brand.id,
     brandName: brand.name,
     competitorBrandIds: brand.competitors || [],
   });
 
-  const negative_count = buckets.negative;
-  const sentiment_count = pipeOnly.length || seedOverview.sentiment_count || 0;
-
   return {
     monitor_days: seedOverview.monitor_days || 30,
-    sentiment_count: sentiment_count || overview.valid_rank_count,
-    sentiment_score:
-      scored > 0
-        ? Number((scoreSum / scored).toFixed(1))
-        : overview.sentiment_score || seedOverview.sentiment_score,
-    positive_count: buckets.positive || seedOverview.positive_count || 0,
-    neutral_count: buckets.neutral || seedOverview.neutral_count || 0,
-    negative_count: negative_count || seedOverview.negative_count || 0,
-    positive_mention_count: seedOverview.positive_mention_count,
-    negative_mention_count: seedOverview.negative_mention_count,
-    has_brand_count: hasBrand || overview.valid_rank_count,
+    sentiment_count: overview.sentiment_count,
+    sentiment_score: overview.sentiment_score,
+    positive_count: overview.positive_count,
+    neutral_count: overview.neutral_count,
+    negative_count: overview.negative_count,
+    positive_rate: overview.positive_rate,
+    neutral_rate: overview.neutral_rate,
+    negative_rate: overview.negative_rate,
+    positive_word_count: overview.positive_word_count,
+    negative_word_count: overview.negative_word_count,
+    positive_mention_count: overview.positive_count,
+    negative_mention_count: overview.negative_count,
+    has_brand_count: overview.valid_rank_count,
     res_positive_count: seedOverview.res_positive_count,
     res_negative_count: seedOverview.res_negative_count,
-    negative_mention_rate: sentiment_count
-      ? Number((negative_count / sentiment_count).toFixed(4))
-      : seedOverview.negative_mention_rate,
+    negative_mention_rate: null,
     _meta: {
-      ...(seedOverview._meta || {}),
-      sentiment_score: 'pipeline keyword stub / seed mock — algorithm unknown (U-02)',
-      negative_mention_rate: 'PROVISIONAL: negative_count / sentiment_count',
+      ...(overview._meta || {}),
+      sentiment_score: 'unknown model (U-02) — null unless score_origin=upstream',
+      negative_mention_rate: 'unknown denominator (SE-05) — not emitted',
     },
     _pipeline,
   };
@@ -254,19 +235,20 @@ function mergeSentimentTrend(seedTrend, brandPlanId) {
   const dates = [...new Set(pipe.map((d) => d.date))].sort();
   const series = dates.map((date) => {
     const day = pipe.filter((d) => d.date === date);
-    const buckets = { positive: 0, neutral: 0, negative: 0 };
-    let scoreSum = 0;
-    for (const d of day) {
-      const label = (d.sentiment && d.sentiment.label) || 'neutral';
-      buckets[label] += 1;
-      scoreSum += (d.sentiment && d.sentiment.score) || 0;
-    }
+    const o = computeOverview({
+      dialogs: day,
+      brandId: brand.id,
+      brandName: brand.name,
+      competitorBrandIds: brand.competitors || [],
+    });
     return {
       date,
-      sentiment_score: day.length ? Number((scoreSum / day.length).toFixed(1)) : 0,
-      positive_count: buckets.positive,
-      negative_count: buckets.negative,
-      neutral_count: buckets.neutral,
+      sentiment_score: o.sentiment_score,
+      positive_count: o.positive_count,
+      negative_count: o.negative_count,
+      neutral_count: o.neutral_count,
+      positive_rate: o.positive_rate,
+      sentiment_count: o.sentiment_count,
     };
   });
   // append seed dates not in pipeline
@@ -286,20 +268,20 @@ function mergeSentimentPlatforms(seedPayload, brandPlanId) {
   const platforms = [...new Set(pipe.map((d) => d.platform))];
   const list = platforms.map((platform) => {
     const subset = pipe.filter((d) => d.platform === platform);
-    const buckets = { positive: 0, neutral: 0, negative: 0 };
-    let scoreSum = 0;
-    for (const d of subset) {
-      const label = (d.sentiment && d.sentiment.label) || 'neutral';
-      buckets[label] += 1;
-      scoreSum += (d.sentiment && d.sentiment.score) || 0;
-    }
+    const o = computeOverview({
+      dialogs: subset,
+      brandId: brand.id,
+      brandName: brand.name,
+      competitorBrandIds: brand.competitors || [],
+    });
     return {
       platform,
-      sentiment_count: subset.length,
-      sentiment_score: subset.length ? Number((scoreSum / subset.length).toFixed(1)) : 0,
-      positive_count: buckets.positive,
-      neutral_count: buckets.neutral,
-      negative_count: buckets.negative,
+      sentiment_count: o.sentiment_count,
+      sentiment_score: o.sentiment_score,
+      positive_count: o.positive_count,
+      neutral_count: o.neutral_count,
+      negative_count: o.negative_count,
+      positive_rate: o.positive_rate,
       source: 'pipeline',
     };
   });
@@ -327,8 +309,12 @@ function mergeDialogRecords(seedPayload, brandPlanId) {
       brand_words_count: (d.mentions || []).reduce((s, m) => s + (m.count || 1), 0),
       min_rank: self ? self.rank : null,
       source_count: (d.citations || []).length,
-      sentiment: (d.sentiment && d.sentiment.label) || 'neutral',
-      sentiment_score: (d.sentiment && d.sentiment.score) || null,
+      sentiment: (d.sentiment && d.sentiment.label) || null,
+      sentiment_score: d.sentiment && d.sentiment.score_origin === 'upstream' ? d.sentiment.score : null,
+      positive_word_hits: (d.sentiment && d.sentiment.positive_word_hits) || 0,
+      negative_word_hits: (d.sentiment && d.sentiment.negative_word_hits) || 0,
+      answer_excerpt: d.answer_excerpt || '',
+      citations: (d.citations || []).map((c) => ({ title: c.title, site: c.site, url: c.url })),
       mention_mode: d.mention_mode || null,
       source: 'pipeline',
     };

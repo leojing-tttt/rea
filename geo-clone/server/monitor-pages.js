@@ -35,19 +35,26 @@ function computeBrandScore(overview) {
   const x = overview.mention_count || 0;
   const mentionScore = (1 + (99 * x) / (x + 10)) / 100; // normalize 1–100-ish to ~0–1
   const avg = overview.avg_rank || 0;
-  // provisional: better rank → higher contribution
+  // provisional: better rank → higher contribution (U-03)
   const rankTerm = avg > 0 ? Math.min(1, Math.max(0, (6 - avg) / 5)) : 0;
-  const sentimentTerm = Math.min(1, Math.max(0, (overview.sentiment_score || 0) / 100));
+  const hasSentiment = overview.sentiment_score != null && overview.sentiment_score !== '';
+  const sentimentTerm = hasSentiment
+    ? Math.min(1, Math.max(0, Number(overview.sentiment_score) / 100))
+    : null;
   const score =
-    refer * 0.75 + mentionScore * 0.1 + rankTerm * 0.1 + sentimentTerm * 0.05;
+    refer * 0.75 + mentionScore * 0.1 + rankTerm * 0.1 + (sentimentTerm == null ? 0 : sentimentTerm * 0.05);
   return {
     brand_score: Number((score * 100).toFixed(1)),
     _meta: {
       formula: '0.75*refer_rate + 0.1*mentionScore + 0.1*rankTerm + 0.05*sentimentTerm',
       mentionScore: Number(mentionScore.toFixed(4)),
       rankTerm: Number(rankTerm.toFixed(4)),
-      sentimentTerm: Number(sentimentTerm.toFixed(4)),
-      provisional: ['rankTerm', 'sentimentTerm', 'mentionScore scaling'],
+      sentimentTerm: sentimentTerm == null ? null : Number(sentimentTerm.toFixed(4)),
+      sentiment_applied: sentimentTerm != null,
+      provisional: ['rankTerm', 'sentimentTerm normalization', 'mentionScore scaling'],
+      sentiment_note: sentimentTerm == null
+        ? 'sentiment_score model unknown — 0.05 weight not applied'
+        : 'sentiment term uses upstream score/100 (normalization still provisional)',
     },
   };
 }
@@ -163,35 +170,32 @@ function sentimentOverview(brandPlanId) {
     competitorBrandIds: brand.competitors || [],
   });
   const articles = buildCitationSeed(brand);
-  const sentiment_count = overview.valid_rank_count;
-  // polarity from mock article sentiments + dialog ranks
-  const positive_count = Math.round(sentiment_count * 0.55);
-  const negative_count = Math.round(sentiment_count * 0.15);
-  const neutral_count = Math.max(0, sentiment_count - positive_count - negative_count);
-  const positive_mention_count = Math.round(overview.mention_count * 0.6);
-  const negative_mention_count = Math.round(overview.mention_count * 0.12);
   const res_positive_count = articles.filter((a) => a.sentiment === 'positive').length;
   const res_negative_count = articles.filter((a) => a.sentiment === 'negative').length;
-  const negative_mention_rate = overview.valid_rank_count
-    ? Number((negative_count / overview.valid_rank_count).toFixed(4))
-    : 0;
 
   return {
     monitor_days: 30,
-    sentiment_count,
+    sentiment_count: overview.sentiment_count,
     sentiment_score: overview.sentiment_score,
-    positive_count,
-    neutral_count,
-    negative_count,
-    positive_mention_count,
-    negative_mention_count,
+    positive_count: overview.positive_count,
+    neutral_count: overview.neutral_count,
+    negative_count: overview.negative_count,
+    positive_rate: overview.positive_rate,
+    neutral_rate: overview.neutral_rate,
+    negative_rate: overview.negative_rate,
+    positive_word_count: overview.positive_word_count,
+    negative_word_count: overview.negative_word_count,
+    positive_mention_count: overview.positive_count,
+    negative_mention_count: overview.negative_count,
     has_brand_count: overview.valid_rank_count,
     res_positive_count,
     res_negative_count,
-    negative_mention_rate,
+    negative_mention_rate: null,
     _meta: {
-      negative_mention_rate: 'PROVISIONAL: negative_count / valid_rank_count',
-      sentiment_score: 'MOCK — algorithm unknown',
+      ...(overview._meta || {}),
+      negative_mention_rate: 'unknown denominator (SE-05) — not emitted',
+      sentiment_score: 'unknown model (U-02) — null unless upstream score',
+      positive_rate: 'positive_count / sentiment_count (live calcSentimentRate)',
     },
   };
 }
@@ -212,9 +216,11 @@ function sentimentTrend(brandPlanId) {
       return {
         date,
         sentiment_score: o.sentiment_score,
-        positive_count: Math.round(o.valid_rank_count * 0.55),
-        negative_count: Math.round(o.valid_rank_count * 0.15),
-        neutral_count: Math.max(0, o.valid_rank_count - Math.round(o.valid_rank_count * 0.7)),
+        positive_count: o.positive_count,
+        negative_count: o.negative_count,
+        neutral_count: o.neutral_count,
+        positive_rate: o.positive_rate,
+        sentiment_count: o.sentiment_count,
       };
     }),
   };
@@ -234,11 +240,14 @@ function sentimentPlatforms(brandPlanId) {
     });
     return {
       platform,
-      sentiment_count: o.valid_rank_count,
+      sentiment_count: o.sentiment_count,
       sentiment_score: o.sentiment_score,
-      positive_count: Math.round(o.valid_rank_count * 0.55),
-      neutral_count: Math.round(o.valid_rank_count * 0.3),
-      negative_count: Math.round(o.valid_rank_count * 0.15),
+      positive_count: o.positive_count,
+      neutral_count: o.neutral_count,
+      negative_count: o.negative_count,
+      positive_rate: o.positive_rate,
+      neutral_rate: o.neutral_rate,
+      negative_rate: o.negative_rate,
     };
   });
   return { list };

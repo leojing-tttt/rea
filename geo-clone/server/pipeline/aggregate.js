@@ -76,10 +76,12 @@ function aggregateParsed(parsedList, opts = {}) {
   }));
 
   const sentimentBuckets = { positive: 0, neutral: 0, negative: 0 };
+  let labeled = 0;
   for (const d of parsedList || []) {
-    const label = (d.sentiment && d.sentiment.label) || 'neutral';
-    if (sentimentBuckets[label] != null) sentimentBuckets[label] += 1;
-    else sentimentBuckets.neutral += 1;
+    const label = d.sentiment && d.sentiment.label;
+    if (!label || sentimentBuckets[label] == null) continue;
+    sentimentBuckets[label] += 1;
+    labeled += 1;
   }
 
   return {
@@ -94,18 +96,13 @@ function aggregateParsed(parsedList, opts = {}) {
       citations: allCites,
     },
     sentiment_summary: {
-      sentiment_count: (parsedList || []).length,
+      sentiment_count: labeled,
       ...sentimentBuckets,
-      avg_score:
-        (parsedList || []).length === 0
-          ? 0
-          : Number(
-              (
-                (parsedList || []).reduce((s, d) => s + ((d.sentiment && d.sentiment.score) || 0), 0) /
-                parsedList.length
-              ).toFixed(1)
-            ),
-      _stub: true,
+      positive_rate: labeled ? Number((sentimentBuckets.positive / labeled).toFixed(4)) : null,
+      neutral_rate: labeled ? Number((sentimentBuckets.neutral / labeled).toFixed(4)) : null,
+      negative_rate: labeled ? Number((sentimentBuckets.negative / labeled).toFixed(4)) : null,
+      avg_score: null,
+      _score_status: 'unknown_model',
     },
     _meta: {
       pipeline: 'task→raw→parse→aggregate',

@@ -55,7 +55,7 @@
         <el-table-column label="操作" width="200" fixed="right">
           <template slot-scope="{ row }">
             <el-button type="text" size="mini" @click="openDetail(row)">详情</el-button>
-            <el-button type="text" size="mini">{{ row.monitor_status === 'running' ? '暂停' : '开启' }}</el-button>
+            <el-button type="text" size="mini" @click="toggleStatus(row)">{{ row.monitor_status === 'running' ? '暂停' : '开启' }}</el-button>
             <el-button type="text" size="mini">编辑</el-button>
           </template>
         </el-table-column>
@@ -125,6 +125,15 @@ export default {
       const res = await http.get(`/geo/brand/detail/${row.id}`);
       this.detail = res.data || row;
       this.drawer = true;
+    },
+    toggleStatus(row) {
+      const running = row.monitor_status !== 'running';
+      row.monitor_status = running ? 'running' : 'paused';
+      row.monitor_type = running ? '监测中' : '已暂停';
+      this.summary = {
+        ...this.summary,
+        runningCount: this.plans.filter((p) => p.monitor_status === 'running').length,
+      };
     },
   },
 };

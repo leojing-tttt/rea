@@ -137,7 +137,7 @@ export default {
         {
           key: 'sent',
           label: '提及好感度',
-          value: o.sentiment_score || '--',
+          value: o.sentiment_score == null ? '—' : o.sentiment_score,
           tip: METRIC_TIPS.sentimentScore,
           provisional: true,
         },

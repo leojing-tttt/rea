@@ -1,7 +1,6 @@
 const { monitorBrands, monitorDialogs } = require('./mock-data');
 
 const QUESTION_TYPES = ['品牌认知', '产品对比', '购买决策', '使用体验', '其他'];
-const SENTIMENTS = ['positive', 'neutral', 'negative'];
 
 function resolveBrand(brandPlanId) {
   return monitorBrands.find((b) => b.id === brandPlanId) || monitorBrands[0];
@@ -26,8 +25,11 @@ function dialogRecords(brandPlanId) {
       brand_words_count: mentionCount,
       min_rank: self ? self.rank : null,
       source_count: self ? 1 + (i % 4) : 0,
-      sentiment: SENTIMENTS[i % 3],
-      sentiment_score: self ? 70 + (i % 25) : null,
+      sentiment: (d.sentiment && d.sentiment.label) || null,
+      sentiment_score: null,
+      positive_word_hits: (d.sentiment && d.sentiment.positive_word_hits) || 0,
+      negative_word_hits: (d.sentiment && d.sentiment.negative_word_hits) || 0,
+      answer_excerpt: '',
     };
   });
   return { list, total: list.length };
